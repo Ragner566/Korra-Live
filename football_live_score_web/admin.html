@@ -175,15 +175,20 @@
             <!-- Tab Content: API -->
             <div id="tab-api" class="tab-content" style="display: none;">
                 <div class="card" style="background: var(--card); padding: 30px; border-radius: 15px; border: 1px solid var(--border);">
-                    <h2><i class="fas fa-key"></i> إعدادات مفتاح RapidAPI</h2>
-                    <p style="color: #8b949e; font-size: 14px;">أدخل مفتاح SportAPI7 الخاص بك من موقع RapidAPI وسيقوم النظام بالتحقق منه تلقائياً.</p>
+                    <label>مفتاح RapidAPI الأساسي (SportAPI7):</label>
+                    <input type="text" id="api-key-input" placeholder="25603f0a6emsh854d8c40c5ed2adp15d8f1jsn5e5... " style="margin-top: 5px;">
                     
-                    <label>المفتاح الحالي:</label>
-                    <input type="text" id="api-key-input" placeholder="أدخل المفتاح هنا..." style="margin-top: 10px;">
-                    
+                    <label>مفتاح RapidAPI احتياطي (اختياري):</label>
+                    <input type="text" id="api-key-2-input" placeholder="أدخل مفتاح آخر لزيادة الكوتا..." style="margin-top: 5px;">
+
+                    <label>توكن Football-Data.org (مجاني عالي الكوتا):</label>
+                    <input type="text" id="fd-token-input" placeholder="أدخل التوكن من football-data.org..." style="margin-top: 5px;">
+
+                    <label>مفتاح API-Sports (100 طلب مجاني يومياً):</label>
+                    <input type="text" id="api-sports-input" placeholder="أدخل المفتاح من api-sports.io..." style="margin-top: 5px;">
+
                     <div style="display: flex; gap: 10px; margin-top: 10px;">
-                        <button onclick="testKey()" id="test-btn">فحص المفتاح الآن 🔍</button>
-                        <button onclick="updateSettings()" class="btn-blue" id="save-btn">حفظ وتفعيل ✅</button>
+                        <button onclick="updateSettings()" class="btn-blue" id="save-btn" style="width: 100%;">حفظ وتفعيل جميع المصادر ✅</button>
                     </div>
 
                     <div id="api-result" style="margin-top: 20px; padding: 15px; border-radius: 10px; display: none;">
@@ -249,8 +254,9 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAW5HJ5z8K0fLPoorqR_F8rG6_ZyIvKfaA",
@@ -369,6 +375,9 @@
                 const data = docSnap.data();
                 const key = data.korra || data.apiKey || "";
                 document.getElementById('api-key-input').value = key;
+                document.getElementById('api-key-2-input').value = data.rapidApiKey2 || "";
+                document.getElementById('fd-token-input').value = data.footballDataToken || "";
+                document.getElementById('api-sports-input').value = data.apiSportsKey || "";
                 
                 // Ads Settings
                 document.getElementById('adsense-id').value = data.adsenseId || "pub-3630371101145052";
@@ -386,22 +395,30 @@
 
         window.updateSettings = async () => {
             const key = document.getElementById('api-key-input').value.trim();
-            if (!key) return alert("المفتاح لا يمكن أن يكون فارغاً.");
+            const key2 = document.getElementById('api-key-2-input').value.trim();
+            const fdToken = document.getElementById('fd-token-input').value.trim();
+            const sportsKey = document.getElementById('api-sports-input').value.trim();
+
+            if (!key) return alert("يجب إدخال المفتاح الأساسي على الأقل.");
             
             const btn = document.getElementById('save-btn');
-            btn.textContent = "جاري الحفظ...";
-            
+            btn.textContent = "جاري الحفظ والتفعيل...";
+
             try {
                 await setDoc(doc(db, "settings", "global"), {
                     korra: key,
-                    lastUpdated: new Date().toISOString(),
-                    updatedBy: currentUser.email
+                    rapidApiKey1: key,
+                    rapidApiKey2: key2,
+                    footballDataToken: fdToken,
+                    apiSportsKey: sportsKey,
+                    lastUpdated: new Date().toISOString()
                 }, { merge: true });
-                alert("تم تحديث المفتاح وتفعيله على الموقع بنجاح!");
+                alert("تم تحديث جميع المفاتيح بنجاح! السكربت الآلي سيستخدمها في الدورة القادمة.");
             } catch (e) {
+                console.error(e);
                 alert("خطأ في الحفظ، تأكد من الصلاحيات.");
             }
-            btn.textContent = "حفظ وتفعيل ✅";
+            btn.textContent = "حفظ وتفعيل جميع المصادر ✅";
         };
 
         window.saveAdSettings = async () => {
@@ -438,8 +455,29 @@
         // ============================================
         let earningsChart = null;
 
+        const rdb = getDatabase(app);
+
         function initRealTimeStats() {
             const today = new Date().toISOString().split('T')[0];
+
+            // 1.5 Listen for Live Matches Quota (Realtime DB)
+            onValue(ref(rdb, "/live_matches"), (snapshot) => {
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    const statusEl = document.getElementById('db-status');
+                    const planTypeEl = document.getElementById('stat-plan-type');
+                    
+                    if (data.quotaExceeded) {
+                        statusEl.innerText = "Quota Limit!";
+                        statusEl.style.color = "#ff2d55";
+                        planTypeEl.innerText = "استهلاك كامل للحصة";
+                    } else {
+                        statusEl.innerText = "Running";
+                        statusEl.style.color = "var(--primary)";
+                        planTypeEl.innerText = `آخر تحديث: ${new Date(data.lastUpdated).toLocaleTimeString('ar-EG')}`;
+                    }
+                }
+            });
 
             // 1. Listen for Global Stats
             onSnapshot(doc(db, "analytics", "global"), (docSnap) => {

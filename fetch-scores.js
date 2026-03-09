@@ -48,6 +48,24 @@ admin.initializeApp({
   databaseURL: "https://korra-b5d32-default-rtdb.firebaseio.com"
 });
 const db = admin.database();
+const fs = admin.firestore();
+
+// Fetch settings from Firestore to allow dynamic key updates from Admin Panel
+async function loadSettingsFromFirestore() {
+  try {
+    const doc = await fs.collection('settings').doc('global').get();
+    if (doc.exists) {
+      const data = doc.data();
+      if (data.footballDataToken) APIS.footballData.token = data.footballDataToken;
+      if (data.apiSportsKey) APIS.apiSports.key = data.apiSportsKey;
+      if (data.rapidApiKey1) APIS.rapidApi.keys[0] = data.rapidApiKey1;
+      if (data.rapidApiKey2) APIS.rapidApi.keys[1] = data.rapidApiKey2;
+      console.log("Settings loaded from Firestore successfully.");
+    }
+  } catch (e) {
+    console.warn("Failed to load settings from Firestore, using env/defaults:", e.message);
+  }
+}
 
 // ============================================================
 // API FETCHERS
@@ -177,6 +195,10 @@ function shouldFetchLive(existingData) {
 // ============================================================
 async function run() {
   console.log("=== Kora Live Smart Fetch ===");
+  
+  // Load dynamic settings first
+  await loadSettingsFromFirestore();
+
   const today = new Date().toISOString().split("T")[0];
   
   // Check existing data first (Smart Cache)
