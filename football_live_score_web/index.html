@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ar" dir="rtl" id="html-root">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kora Live | كورة لايف - نتائج مباشرة</title>
+    <!-- AdSense Verification -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3630371101145052"
+     crossorigin="anonymous"></script>
+    <meta name="description" content="تابع نتائج المباريات المباشرة والترتيب والإحصائيات الحية لجميع الدوريات العالمية" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link rel="stylesheet" href="style.css?v=2.1" />
+  </head>
+  <body>
+    <!-- App Bar -->
+    <header class="app-bar" id="app-bar">
+      <div class="logo">
+        <i class="fas fa-futbol logo-icon"></i>
+        <span>Kora Live</span>
+      </div>
+      <div class="actions">
+        <button id="lang-switcher" class="icon-btn" onclick="toggleLanguage()">
+          EN
+        </button>
+        <button class="icon-btn" id="refresh-btn" onclick="refreshData()">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Top Headline Ad (Responsive) -->
+    <div class="ad-container-top">
+      <div class="ad-label">ADVERTISEMENT</div>
+      <div class="ad-placeholder-text">تبحث عن أفضل العروض؟ جرب الآن!</div>
+      <!-- <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-xxx" data-ad-slot="xxx"></ins> -->
+    </div>
+
+    <!-- Main Content -->
+    <main class="content" id="main-content">
+      
+      <!-- League Filter -->
+      <section class="league-filter-section" id="league-filter-section">
+        <div class="league-chips" id="league-chips">
+          <button class="league-chip active" data-league="all" onclick="filterByLeague('all', this)">
+            <i class="fas fa-globe"></i>
+            <span data-i18n="allLeagues">الكل</span>
+          </button>
+          <button class="league-chip" data-league="17" onclick="filterByLeague('17', this)">
+            <span class="league-flag">🏴󠁧󠁢󠁥󠁮󠁧󠁿</span>
+            <span data-i18n="premierLeague">البريميرليغ</span>
+          </button>
+          <button class="league-chip" data-league="8" onclick="filterByLeague('8', this)">
+            <span class="league-flag">🇪🇸</span>
+            <span data-i18n="laLiga">لاليغا</span>
+          </button>
+          <button class="league-chip" data-league="23" onclick="filterByLeague('23', this)">
+            <span class="league-flag">🇮🇹</span>
+            <span data-i18n="serieA">سيري أ</span>
+          </button>
+          <button class="league-chip" data-league="35" onclick="filterByLeague('35', this)">
+            <span class="league-flag">🇩🇪</span>
+            <span data-i18n="bundesliga">بوندسليغا</span>
+          </button>
+          <button class="league-chip" data-league="34" onclick="filterByLeague('34', this)">
+            <span class="league-flag">🇫🇷</span>
+            <span data-i18n="ligue1">الدوري الفرنسي</span>
+          </button>
+          <button class="league-chip" data-league="7" onclick="filterByLeague('7', this)">
+            <span class="league-flag">🏆</span>
+            <span data-i18n="championsLeague">دوري الأبطال</span>
+          </button>
+          <button class="league-chip" data-league="955" onclick="filterByLeague('955', this)">
+            <span class="league-flag">🇸🇦</span>
+            <span>الدوري السعودي</span>
+          </button>
+          <button class="league-chip" data-league="808" onclick="filterByLeague('808', this)">
+            <span class="league-flag">🇪🇬</span>
+            <span>الدوري المصري</span>
+          </button>
+          <button class="league-chip" data-league="52" onclick="filterByLeague('52', this)">
+            <span class="league-flag">🇹🇷</span>
+            <span>الدوري التركي</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Date Selector -->
+      <section class="date-selector-section" id="date-section">
+        <button class="date-btn" onclick="changeDate(-1)">
+          <i class="fas fa-chevron-right"></i>
+        </button>
+        <div class="current-date" id="current-date">اليوم</div>
+        <button class="date-btn" onclick="changeDate(1)">
+          <i class="fas fa-chevron-left"></i>
+        </button>
+      </section>
+
+      <!-- Loading Indicator -->
+      <div class="loading-container" id="loading-container">
+        <div class="loading-spinner"></div>
+        <p data-i18n="loading">جاري تحميل المباريات...</p>
+      </div>
+
+      <!-- Error Message -->
+      <div class="error-container" id="error-container" style="display:none">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p id="error-message">حدث خطأ في تحميل البيانات</p>
+        <button class="retry-btn" onclick="refreshData()" data-i18n="retry">إعادة المحاولة</button>
+      </div>
+
+      <!-- Live Matches Section -->
+      <section class="section" id="live-section" style="display:none">
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="live-dot"></span>
+            <span data-i18n="liveNow">مباشر الآن</span>
+          </h2>
+          <span class="match-count" id="live-count">0</span>
+        </div>
+        <div class="matches-list" id="live-matches"></div>
+      </section>
+
+      <!-- Scheduled Matches Section -->
+      <section class="section" id="scheduled-section" style="display:none">
+        <div class="section-header">
+          <h2 class="section-title">
+            <i class="far fa-clock" style="color: var(--accent)"></i>
+            <span data-i18n="scheduledMatches">مباريات قادمة</span>
+          </h2>
+          <span class="match-count" id="scheduled-count">0</span>
+        </div>
+        <div class="matches-list" id="scheduled-matches"></div>
+      </section>
+
+      <!-- Finished Matches Section -->
+      <section class="section" id="finished-section" style="display:none">
+        <div class="section-header">
+          <h2 class="section-title">
+            <i class="fas fa-flag-checkered" style="color: var(--text-secondary)"></i>
+            <span data-i18n="finishedMatches">مباريات منتهية</span>
+          </h2>
+          <span class="match-count" id="finished-count">0</span>
+        </div>
+        <div class="matches-list" id="finished-matches"></div>
+      </section>
+
+      <!-- No Matches -->
+      <div class="no-matches" id="no-matches" style="display:none">
+        <i class="far fa-futbol"></i>
+        <p data-i18n="noMatches">لا توجد مباريات في هذا اليوم</p>
+      </div>
+
+      <!-- Match Detail Modal -->
+      <div class="modal-overlay" id="match-modal" style="display:none">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button class="modal-close" onclick="closeModal()">
+              <i class="fas fa-times"></i>
+            </button>
+            <h3 id="modal-league-name">اسم الدوري</h3>
+          </div>
+          <div class="modal-body" id="modal-body">
+            <!-- Dynamic content -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Standings Section (for bottom nav) -->
+      <section class="section standings-page" id="standings-page" style="display:none">
+        <h2 class="section-title" data-i18n="standings">الترتيب</h2>
+        <div class="standings-league-selector" id="standings-league-selector"></div>
+        <div class="standings-table-container" id="standings-table-container">
+          <div class="loading-container">
+            <div class="loading-spinner"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- News Section (for bottom nav) -->
+      <section class="section news-page" id="news-page" style="display:none">
+        <h2 class="section-title" data-i18n="news">الأخبار</h2>
+        <div class="news-list" id="news-list">
+          <div class="news-placeholder">
+            <i class="far fa-newspaper"></i>
+            <p data-i18n="newsComingSoon">قسم الأخبار قريبًا</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom padding -->
+      <div style="height: 80px"></div>
+    </main>
+
+    <!-- Auto-refresh indicator -->
+    <div class="auto-refresh-bar" id="auto-refresh-bar">
+      <div class="refresh-progress" id="refresh-progress"></div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav" id="bottom-nav">
+      <a href="#" class="nav-item active" data-page="matches" onclick="switchPage('matches', this, event)">
+        <i class="fas fa-futbol"></i>
+        <span data-i18n="matches">المباريات</span>
+      </a>
+      <!-- In-Feed Native Ad -->
+      <div class="native-ad-feed">
+        <div class="ad-badge">AD</div>
+        <div class="ad-content-wrapper">
+          <div class="ad-icon"><i class="fas fa-shopping-bag"></i></div>
+          <div class="ad-text">
+            <h4>تسوق الآن!</h4>
+            <p>أفضل الملابس الرياضية بأسعار مذهلة</p>
+          </div>
+          <button class="ad-btn">اكتشف</button>
+        </div>
+      </div>
+      <a href="#" class="nav-item" data-page="standings" onclick="switchPage('standings', this, event)">
+        <i class="fas fa-list-ol"></i>
+        <span data-i18n="standings">الترتيب</span>
+      </a>
+      <a href="#" class="nav-item" data-page="news" onclick="switchPage('news', this, event)">
+        <i class="far fa-newspaper"></i>
+        <span data-i18n="news">الأخبار</span>
+      </a>
+    </nav>
+
+    <!-- API Key Setup Modal -->
+    <div class="api-key-modal" id="api-key-modal" style="display:none">
+      <div class="api-key-content">
+        <h3 style="margin-bottom: 10px;">🔑 مطلوب مفتاح API الـ SportAPI7</h3>
+        <p style="font-size: 14px; margin-bottom: 15px;">للحصول على نتائج المباريات المباشرة، تحتاج إلى تفعيل الاشتراك في <a href="https://rapidapi.com/sportapi7/api/sportapi7" target="_blank" style="color:var(--accent); font-weight:bold;">SportAPI7</a> على منصة RapidAPI.</p>
+        
+        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; margin-bottom: 15px; text-align: right;">
+          <p style="font-size: 13px; font-weight: bold; color: var(--accent); margin-bottom: 10px;">خطوات التفعيل:</p>
+          <ol style="padding-right: 20px; font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+            <li>انتقل إلى صفحة <a href="https://rapidapi.com/sportapi7/api/sportapi7/pricing" target="_blank" style="color:var(--accent)">الأسعار هنا</a></li>
+            <li>تأكد من الضغط على زر <b style="color:white">Subscribe</b> (حتى للخطة المجانية Free)</li>
+            <li>انسخ الـ <b style="color:white">API Key</b> من صفحة الإعدادات</li>
+            <li>ضعه في المربع أدناه أو في لوحة تحكم الأدمن</li>
+          </ol>
+        </div>
+
+        <input type="text" id="api-key-input" placeholder="ضع مفتاح API هنا..." class="api-key-field" />
+        <div style="display:flex; gap:10px; margin-top:10px">
+          <button class="api-key-save" style="width:100%" onclick="saveApiKey()">حفظ وتشغيل</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script>
+      // Firebase Configuration
+      var firebaseConfig = {
+        apiKey: "AIzaSyAW5HJ5z8K0fLPoorqR_F8rG6_ZyIvKfaA",
+        authDomain: "korra-b5d32.firebaseapp.com",
+        projectId: "korra-b5d32",
+        storageBucket: "korra-b5d32.firebasestorage.app",
+        messagingSenderId: "583177780653",
+        appId: "1:583177780653:web:c58e3e45742b72695d3524",
+        measurementId: "G-C2KSH4DYY6"
+      };
+      // Initialize Firebase
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+          console.log("Korra Firebase Initialized");
+        }
+      } catch(e) {
+        console.error("Firebase init failed:", e);
+      }
+    </script>
+
+    <script src="script.js?v=2.1"></script>
+    <script>
+      // Initialize app immediately with fallback key
+      // Firebase sync (in initFirebaseSync) will override the key once it loads
+      document.addEventListener('DOMContentLoaded', () => {
+        checkApiKey();   // sets fallback key immediately
+        initApp();       // starts fetching matches right away
+        // Firebase sync runs in background and updates key if found
+        if (typeof initFirebaseSync === 'function') {
+          initFirebaseSync();
+        }
+      });
+    </script>
+  </body>
+</html>

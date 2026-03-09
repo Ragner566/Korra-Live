@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Korra Admin | Dashboard Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #00ffa3;
+            --primary-glow: rgba(0, 255, 163, 0.3);
+            --bg: #05070a;
+            --bg-card: #0c111d;
+            --border: rgba(255,255,255,0.08);
+            --text: #f0f6fc;
+            --text-dim: #8b949e;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--bg); color: var(--text); margin: 0; overflow-x: hidden; }
+        
+        /* Login Overlay */
+        #login-overlay {
+            position: fixed; inset: 0; background: var(--bg); z-index: 1000;
+            display: flex; align-items: center; justify-content: center;
+            background-image: radial-gradient(circle at center, #0c1a15 0%, #05070a 100%);
+        }
+        .login-box {
+            background: var(--bg-card); padding: 50px 40px; border-radius: 24px;
+            width: 380px; text-align: center; border: 1px solid var(--border);
+            box-shadow: 0 15px 50px rgba(0,0,0,0.5);
+        }
+
+        /* Sidebar & Layout */
+        .wrapper { display: flex; min-height: 100vh; }
+        .sidebar { 
+            width: 280px; 
+            background: #010409; 
+            padding: 30px 20px; 
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+        .main { flex: 1; padding: 40px; }
+
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 25px; margin-bottom: 30px; }
+        .stat-card { 
+            background: var(--bg-card); 
+            padding: 25px; 
+            border-radius: 20px; 
+            border: 1px solid var(--border); 
+            text-align: center; 
+            transition: 0.3s;
+        }
+        .stat-card:hover { transform: translateY(-5px); border-color: var(--primary); }
+        .stat-card h3 { margin: 12px 0; font-size: 28px; color: var(--primary); font-family: 'Outfit', sans-serif; }
+        .stat-card p { margin: 0; color: var(--text-dim); font-size: 14px; font-weight: 500; }
+
+        .chart-container { background: var(--bg-card); padding: 25px; border-radius: 20px; margin-bottom: 30px; border: 1px solid var(--border); }
+        
+        input, select, button { 
+            width: 100%; padding: 14px 18px; margin-bottom: 20px; 
+            background: #0d1117; border: 1px solid #30363d; 
+            border-radius: 12px; color: white; font-family: inherit;
+            outline: none; transition: 0.3s;
+        }
+        input:focus { border-color: var(--primary); box-shadow: 0 0 10px var(--primary-glow); }
+        
+        button { 
+            background: var(--primary); color: #000; font-weight: 800; border: none; 
+            cursor: pointer; transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-size: 15px;
+        }
+        button:hover { transform: scale(1.02); filter: brightness(1.1); box-shadow: 0 0 20px var(--primary-glow); }
+        .btn-blue { background: #448aff; color: white; }
+        
+        h2 { font-size: 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; color: var(--primary); }
+        .nav-item { 
+            padding: 16px 20px; border-radius: 14px; cursor: pointer; 
+            transition: 0.3s; display: flex; align-items: center; gap: 12px;
+            color: var(--text-dim); font-weight: 600; margin-bottom: 5px;
+        }
+        .nav-item i { font-size: 18px; }
+        .nav-item:hover, .nav-item.active { background: rgba(0,255,163,0.08); color: var(--primary); }
+
+        .tab-content { display: none; animation: fadeIn 0.4s ease; }
+        .tab-content.active { display: block; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+        .badge-free { background: rgba(255,255,255,0.1); color: #8b949e; }
+        .badge-paid { background: rgba(0,255,163,0.1); color: var(--primary); }
+    </style>
+</head>
+<body>
+
+    <!-- Login System -->
+    <div id="login-overlay">
+        <div class="login-box">
+            <div style="width: 80px; height: 80px; background: rgba(0,255,163,0.1); border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto 25px;">
+                <i class="fas fa-user-shield" style="font-size: 40px; color: var(--primary);"></i>
+            </div>
+            <h1 style="font-size: 20px; margin-bottom: 10px;">نظام إدارة Korra</h1>
+            <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 30px;">يرجى تسجيل الدخول للمتابعة</p>
+            <input type="email" id="login-email" placeholder="البريد الإلكتروني للذكاء">
+            <input type="password" id="login-pass" placeholder="كلمة السر">
+            <button onclick="handleLogin()">دخول لوحة التحكم</button>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div class="wrapper" id="dashboard-ui" style="display: none;">
+        <aside class="sidebar">
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 900; margin-bottom: 50px; color: var(--primary);">
+                <i class="fas fa-futbol"></i> Kora Admin
+            </div>
+            <div class="nav-item active" onclick="switchTab('stats', this)"><i class="fas fa-chart-line"></i> الإحصائيات والأرباح</div>
+            <div class="nav-item" onclick="switchTab('api', this)"><i class="fas fa-key"></i> إعدادات الـ API</div>
+            <div class="nav-item" onclick="switchTab('ads', this)"><i class="fas fa-ad"></i> التحكم بالإعلانات</div>
+            <div class="nav-item" onclick="switchTab('users', this)"><i class="fas fa-users-cog"></i> الطاقم والمستخدمين</div>
+            
+            <div style="margin-top: auto;">
+                <button class="btn-blue" onclick="firebase.auth().signOut().then(() => location.reload())">تسجيل الخروج</button>
+            </div>
+        </aside>
+
+        <main class="main">
+            <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
+                <div>
+                    <h1 id="tab-title" style="font-size: 24px; font-weight: 800; margin-bottom: 5px;">لوحة الإنتاج والمراقبة</h1>
+                    <p style="color: var(--text-dim); font-size: 14px;">مرحباً مجدداً في نظامك الإداري المتعدد.</p>
+                </div>
+                <div style="text-align: left; background: var(--bg-card); padding: 10px 20px; border-radius: 12px; border: 1px solid var(--border);">
+                    <span id="admin-name" style="color: var(--primary); font-weight: 700;">Admin User</span><br>
+                    <small style="color: var(--text-dim);">الحالة: <span style="color: #00ffa3;">متصل الآن</span></small>
+                </div>
+            </header>
+
+            <!-- Tab Content: Stats -->
+            <div id="tab-stats" class="tab-content active">
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <p>إجمالي الزيارات (اليوم)</p>
+                        <h3 id="stat-today-visits" style="color:var(--primary)">0</h3>
+                        <small id="stat-total-visits-global" style="color: var(--text-dim);">إجمالي: 0</small>
+                    </div>
+                    <div class="stat-card">
+                        <p>نقرات الإعلانات (AdClicks)</p>
+                        <h3 id="stat-ad-clicks" style="color: #ff2d55;">0</h3>
+                        <small id="stat-ad-earnings-est" style="color: var(--primary);"><i class="fas fa-coins"></i> تقديري: $0.00</small>
+                    </div>
+                    <div class="stat-card">
+                        <p>تفاعل المحتوى (Clicks)</p>
+                        <h3 id="stat-match-clicks">0</h3>
+                        <small id="stat-plan-type">الخطة النشطة</small>
+                    </div>
+                    <div class="stat-card">
+                        <p>حالة قاعدة البيانات</p>
+                        <h3 id="db-status" style="color: #448aff;">Connected</h3>
+                        <small>Firebase Firestore</small>
+                    </div>
+                    <div class="stat-card">
+                        <p>نقرات الإعلانات</p>
+                        <h3 id="clicks">312</h3>
+                        <small>CTR: 2.1%</small>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h2><i class="fas fa-money-bill-wave"></i> منحنى الأرباح الأسبوعي</h2>
+                    <canvas id="earningsChart" height="100"></canvas>
+                </div>
+            </div>
+
+            <!-- Tab Content: API -->
+            <div id="tab-api" class="tab-content" style="display: none;">
+                <div class="card" style="background: var(--card); padding: 30px; border-radius: 15px; border: 1px solid var(--border);">
+                    <h2><i class="fas fa-key"></i> إعدادات مفتاح RapidAPI</h2>
+                    <p style="color: #8b949e; font-size: 14px;">أدخل مفتاح SportAPI7 الخاص بك من موقع RapidAPI وسيقوم النظام بالتحقق منه تلقائياً.</p>
+                    
+                    <label>المفتاح الحالي:</label>
+                    <input type="text" id="api-key-input" placeholder="أدخل المفتاح هنا..." style="margin-top: 10px;">
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button onclick="testKey()" id="test-btn">فحص المفتاح الآن 🔍</button>
+                        <button onclick="updateSettings()" class="btn-blue" id="save-btn">حفظ وتفعيل ✅</button>
+                    </div>
+
+                    <div id="api-result" style="margin-top: 20px; padding: 15px; border-radius: 10px; display: none;">
+                        <!-- JS fills this -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Content: Ads -->
+            <div id="tab-ads" class="tab-content" style="display: none;">
+                <div class="stat-card" style="text-align: right; padding: 40px;">
+                    <h2 style="margin-top: 0;"><i class="fas fa-ad"></i> إدارة الإعلانات والتمويل</h2>
+                    <p style="color: var(--text-dim); margin-bottom: 30px;">تحكم في الشركات الإعلانية وتكرار الظهور لتحسين الأرباح.</p>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 10px; font-weight: 700;">معرف الناشر AdSense (Publisher ID)</label>
+                            <input type="text" id="adsense-id" placeholder="pub-3630371101145052">
+                            
+                            <label style="display: block; margin-bottom: 10px; font-weight: 700;">معرف PropellerAds (Tag ID)</label>
+                            <input type="text" id="propeller-id" placeholder="مثلاً: 1234567">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 10px; font-weight: 700;">تكرار الإعلان البيني (كل كم ضغطة؟)</label>
+                            <input type="number" id="interstitial-freq" value="5" min="1" max="20">
+                            
+                            <div style="background: rgba(0,255,163,0.05); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
+                                <small style="color: var(--primary); font-weight: 700;"><i class="fas fa-magic"></i> نصيحة الأداء:</small>
+                                <p style="font-size: 11px; color: var(--text-dim); margin-top: 5px; line-height: 1.6;">
+                                    عرض إعلان كل 5 ضغطات يعتبر التوازن الأمثل بين تجربة المستخدم المريحة وتحقيق عوائد جيدة.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button onclick="saveAdSettings()" id="save-ads-btn" style="width: auto; padding: 14px 60px; margin-top: 20px;">
+                         حفظ إعدادات التمويل <i class="fas fa-check-circle"></i>
+                    </button>
+                    <div id="ads-save-status" style="margin-top: 15px; font-size: 13px; font-weight: 700;"></div>
+                </div>
+            </div>
+
+            <!-- Tab Content: Users -->
+            <div id="tab-users" class="tab-content" style="display: none;">
+                <div class="card" style="background: var(--card); padding: 30px; border-radius: 15px; border: 1px solid var(--border);">
+                    <h2><i class="fas fa-users-cog"></i> المشرفين المسجلين</h2>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <th style="padding: 10px; text-align: right;">المشرف</th>
+                            <th style="padding: 10px; text-align: right;">الرتبة</th>
+                            <th style="padding: 10px; text-align: right;">آخر ظهور</th>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px;">admin@korra.com</td>
+                            <td style="padding: 10px; color: var(--primary);">صاحب الموقع</td>
+                            <td style="padding: 10px;">نشط الآن</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAW5HJ5z8K0fLPoorqR_F8rG6_ZyIvKfaA",
+            authDomain: "korra-b5d32.firebaseapp.com",
+            projectId: "korra-b5d32",
+            storageBucket: "korra-b5d32.firebasestorage.app",
+            messagingSenderId: "583177780653",
+            appId: "1:583177780653:web:c58e3e45742b72695d3524",
+            measurementId: "G-C2KSH4DYY6"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+
+        // Auto Login Check
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('login-overlay').style.display = 'none';
+                document.getElementById('dashboard-ui').style.display = 'flex';
+                document.getElementById('admin-name').textContent = `مرحباً، ${user.email.split('@')[0]}`;
+                loadInitialData();
+            }
+        });
+
+        function loadInitialData() {
+            initRealTimeStats();
+            // Default to stats tab
+            const firstNavItem = document.querySelector('.nav-item');
+            if (firstNavItem) switchTab('stats', firstNavItem);
+        }
+
+        // Tab Switching
+        window.switchTab = (tabId, el) => {
+            document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            
+            document.getElementById(`tab-${tabId}`).style.display = 'block';
+            el.classList.add('active');
+            
+            const titles = {
+                stats: "لوحة القيادة والمراقبة 📈",
+                api: "التحكم بمصادر البيانات ⚽",
+                ads: "إدارة المساحات الإعلانية 💰",
+                users: "إدارة فريق العمل 👥"
+            };
+            document.getElementById('tab-title').textContent = titles[tabId];
+        };
+
+        // Login Handler
+        window.handleLogin = async () => {
+            const email = document.getElementById('login-email').value;
+            const pass = document.getElementById('login-pass').value;
+            try {
+                const btn = document.querySelector('#login-overlay button');
+                btn.textContent = "جاري التحقق...";
+                await signInWithEmailAndPassword(auth, email, pass);
+            } catch (e) {
+                alert("للأسف، بيانات الدخول غير صحيحة.");
+                document.querySelector('#login-overlay button').textContent = "دخول الآن";
+            }
+        };
+
+        // API Key Testing and Details
+        window.testKey = async () => {
+            const key = document.getElementById('api-key-input').value.trim();
+            const resultDiv = document.getElementById('api-result');
+            const btn = document.getElementById('test-btn');
+            
+            if (!key) return alert("أدخل مفتاحاً أولاً!");
+
+            btn.textContent = "جاري الفحص...";
+            resultDiv.style.display = "block";
+            resultDiv.style.background = "#1c2128";
+            resultDiv.innerHTML = `<p style="color: #448aff;">جاري الاتصال بسيرفرات SportAPI7...</p>`;
+
+            try {
+                const response = await fetch(`https://sportapi7.p.rapidapi.com/api/v1/event/668?key=test`, {
+                    headers: {
+                        'x-rapidapi-host': 'sportapi7.p.rapidapi.com',
+                        'x-rapidapi-key': key
+                    }
+                });
+
+                const limit = response.headers.get('x-ratelimit-requests-limit');
+                const remaining = response.headers.get('x-ratelimit-requests-remaining');
+                
+                if (response.status === 200 || response.status === 404) {
+                    const isPaid = parseInt(limit) > 1000;
+                    resultDiv.innerHTML = `
+                        <div style="color: var(--primary); font-weight: bold; margin-bottom: 5px;">✅ المفتاح يعمل بنجاح!</div>
+                        <div style="font-size: 14px;">
+                            <div>نوع الباقة: <span style="color: ${isPaid ? '#448aff' : 'orange'}">${isPaid ? 'مدفوعة (Pro/Ultra)' : 'مجانية (Basic)'}</span></div>
+                            <div>الطلبات المتاحة: ${limit}</div>
+                            <div>الطلبات المتبقية: ${remaining}</div>
+                        </div>
+                    `;
+                } else if (response.status === 429) {
+                    resultDiv.innerHTML = `<div style="color: #ff3d00;">⚠️ المفتاح صحيح ولكن استهلكت الكوتا الشهرية (429).</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div style="color: #ff3d00;">❌ المفتاح غير صحيح أو غير مفعل (خطأ ${response.status}).</div>`;
+                }
+            } catch (e) {
+                resultDiv.innerHTML = `<div style="color: #ff3d00;">❌ فشل الاتصال. تأكد من جودة الإنترنت.</div>`;
+            }
+            btn.textContent = "فحص المفتاح الآن 🔍";
+        };
+
+        // Data Management
+        async function loadInitialData() {
+            const docSnap = await getDoc(doc(db, "settings", "global"));
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const key = data.korra || data.apiKey || "";
+                document.getElementById('api-key-input').value = key;
+                
+                // Ads Settings
+                document.getElementById('adsense-id').value = data.adsenseId || "pub-3630371101145052";
+                document.getElementById('propeller-id').value = data.propellerId || "";
+                document.getElementById('interstitial-freq').value = data.adFrequency || 5;
+
+                // Update stats card UI
+                if (key.length > 30) {
+                    document.getElementById('api-cost-display').textContent = "$0.00";
+                    document.getElementById('plan-tag').textContent = "مفتاح نشط";
+                }
+            }
+            initCharts();
+        }
+
+        window.updateSettings = async () => {
+            const key = document.getElementById('api-key-input').value.trim();
+            if (!key) return alert("المفتاح لا يمكن أن يكون فارغاً.");
+            
+            const btn = document.getElementById('save-btn');
+            btn.textContent = "جاري الحفظ...";
+            
+            try {
+                await setDoc(doc(db, "settings", "global"), {
+                    korra: key,
+                    lastUpdated: new Date().toISOString(),
+                    updatedBy: currentUser.email
+                }, { merge: true });
+                alert("تم تحديث المفتاح وتفعيله على الموقع بنجاح!");
+            } catch (e) {
+                alert("خطأ في الحفظ، تأكد من الصلاحيات.");
+            }
+            btn.textContent = "حفظ وتفعيل ✅";
+        };
+
+        window.saveAdSettings = async () => {
+            const adsenseId = document.getElementById('adsense-id').value.trim();
+            const propellerId = document.getElementById('propeller-id').value.trim();
+            const adFrequency = parseInt(document.getElementById('interstitial-freq').value) || 5;
+            
+            const btn = document.getElementById('save-ads-btn');
+            const status = document.getElementById('ads-save-status');
+            
+            btn.textContent = "جاري حفظ الإعلانات...";
+            status.innerHTML = "";
+
+            try {
+                await setDoc(doc(db, "settings", "global"), {
+                    adsenseId,
+                    propellerId,
+                    adFrequency,
+                    adsLastUpdated: new Date().toISOString()
+                }, { merge: true });
+                
+                status.style.color = "var(--primary)";
+                status.innerHTML = `<i class="fas fa-check-circle"></i> تم الحفظ بنجاح! سيتم تطبيق الإعلانات فوراً.`;
+                setTimeout(() => status.innerHTML = "", 3000);
+            } catch (e) {
+                status.style.color = "#ff2d55";
+                status.innerHTML = "❌ فشل الحفظ. راجع اتصالك بالإنترنت.";
+            }
+            btn.innerHTML = `حفظ إعدادات التمويل <i class="fas fa-check-circle"></i>`;
+        };
+
+        // ============================================
+        // REAL-TIME ANALYTICS LOAD (DB -> UI)
+        // ============================================
+        let earningsChart = null;
+
+        function initRealTimeStats() {
+            const today = new Date().toISOString().split('T')[0];
+
+            // 1. Listen for Global Stats
+            onSnapshot(doc(db, "analytics", "global"), (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    document.getElementById('stat-total-visits-global').innerText = `إجمالي: ${data.totalVisits || 0}`;
+                    document.getElementById('stat-ad-clicks').innerText = data.adClicks || 0;
+                    document.getElementById('stat-match-clicks').innerText = data.matchClicks || 0;
+                    
+                    // Estimate earnings ($0.05 per ad click)
+                    const est = (data.adClicks || 0) * 0.05;
+                    document.getElementById('stat-ad-earnings-est').innerText = `تقديري: $${est.toFixed(2)}`;
+                }
+            });
+
+            // 2. Listen for Today's Stats
+            onSnapshot(doc(db, "analytics", "daily", "dates", today), (docSnap) => {
+                if (docSnap.exists()) {
+                    document.getElementById('stat-today-visits').innerText = docSnap.data().visits || 0;
+                }
+            });
+
+            // 3. (Optional) Load Plan from Key Settings
+            onSnapshot(doc(db, "settings", "global"), (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.korra) document.getElementById('api-key-input').value = data.korra;
+                    if (data.adsenseId) document.getElementById('adsense-id').value = data.adsenseId;
+                    if (data.propellerId) document.getElementById('propeller-id').value = data.propellerId;
+                    if (data.adFrequency) document.getElementById('interstitial-freq').value = data.adFrequency;
+                }
+            });
+
+            // Load Chart Data (Last 7 Days)
+            loadChartData();
+        }
+
+        async function loadChartData() {
+            const chartLabels = [];
+            const chartData = [];
+            
+            // Get last 7 days keys
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const key = d.toISOString().split('T')[0];
+                const dayName = d.toLocaleDateString('ar-EG', { weekday: 'short' });
+                chartLabels.push(dayName);
+                
+                // Get doc for this day
+                try {
+                    const docRef = doc(db, "analytics", "daily", "dates", key);
+                    const snap = await getDoc(docRef);
+                    chartData.push(snap.exists() ? snap.data().visits || 0 : 0);
+                } catch(e) { chartData.push(0); }
+            }
+
+            renderChart(chartLabels, chartData);
+        }
+
+        function renderChart(labels, data) {
+            const canvas = document.getElementById('earningsChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            
+            if (earningsChart) earningsChart.destroy();
+
+            earningsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'الزيارات اليومية',
+                        data: data,
+                        borderColor: '#00ffa3',
+                        backgroundColor: 'rgba(0, 255, 163, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: { backgroundColor: '#0c111d', titleColor: '#00ffa3', bodyColor: '#fff', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1 }
+                    },
+                    scales: { 
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, border: { display: false } },
+                        x: { grid: { display: false }, border: { display: false } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

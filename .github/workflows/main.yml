@@ -1,0 +1,27 @@
+name: Fetch Kora Live Scores
+
+on:
+  schedule:
+    - cron: "*/5 * * * *" # Run every 5 minutes
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  fetch-scores:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        run: npm install axios firebase-admin dotenv
+
+      - name: Fetch and Save Scores
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node fetch-scores.js
