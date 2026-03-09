@@ -189,10 +189,69 @@ body {
 .section-title { font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
 .match-count { background: var(--border); color: var(--text-secondary); padding: 4px 12px; border-radius: 100px; font-size: 11px; font-weight: 700; }
 
-/* Date Selector */
-.date-selector-section { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 10px 0 20px; }
-.date-btn { background: var(--bg-card); border: 1px solid var(--border); color: #fff; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; }
-.current-date { font-weight: 700; min-width: 140px; text-align: center; font-size: 15px; }
+/* Match Day Tabs */
+.match-tabs {
+  display: flex;
+  background: var(--bg-secondary);
+  margin: 10px 16px 20px;
+  padding: 5px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.match-tab {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.3s;
+}
+
+.match-tab.active {
+  background: var(--bg-card);
+  color: var(--accent);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+/* Standings Tabs Cards */
+.standings-league-selector {
+  display: flex;
+  gap: 10px;
+  padding: 10px 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.standings-league-selector::-webkit-scrollbar { display: none; }
+
+.standings-league-btn {
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.3s;
+}
+
+.standings-league-btn.active {
+  background: var(--accent-glow);
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 15px var(--accent-glow);
+}
+
+.standings-league-btn:hover:not(.active) {
+  border-color: var(--border-bright);
+  color: var(--text-primary);
+}
 
 /* Modals - Glassmorphism */
 .modal-overlay {
@@ -275,12 +334,90 @@ body {
 .ad-btn { background: var(--accent); color: #000; border: none; padding: 10px 20px; border-radius: 10px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 15px var(--accent-glow); }
 
 /* Standings */
-.standings-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-.standings-table th { padding: 12px 8px; text-align: center; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
-.standings-table td { padding: 14px 8px; text-align: center; font-size: 13px; border-bottom: 1px solid var(--border); font-family: var(--font-en); font-weight: 600; }
-.standings-team-cell { display: flex; align-items: center; gap: 10px; text-align: right; }
-html[lang="en"] .standings-team-cell { text-align: left; }
-.standings-pts { color: var(--accent); font-weight: 900; }
+.standings-table-container {
+  overflow-x: auto;
+  margin: 15px 16px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  -webkit-overflow-scrolling: touch;
+}
+
+.standings-table { 
+  width: 100%; 
+  border-collapse: collapse; 
+  table-layout: auto;
+  min-width: 320px;
+}
+
+.standings-table th { 
+  padding: 10px 4px; 
+  text-align: center; 
+  font-size: 10px; 
+  color: var(--text-muted); 
+  border-bottom: 1px solid var(--border); 
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.standings-table td { 
+  padding: 10px 4px; 
+  text-align: center; 
+  font-size: 11px; 
+  border-bottom: 1px solid var(--border); 
+  font-family: var(--font-en); 
+  font-weight: 600; 
+  color: var(--text-primary);
+}
+
+.standings-team-cell { 
+  display: flex; 
+  align-items: center; 
+  gap: 6px; 
+  text-align: right; 
+  min-width: 100px;
+  padding-right: 8px;
+}
+
+.standings-team-cell img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.standings-team-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+  font-size: 11px;
+}
+
+.standings-rank {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.standings-pts { 
+  color: var(--accent); 
+  font-weight: 900; 
+  font-size: 13px;
+}
+
+@media (max-width: 400px) {
+  .standings-table td, .standings-table th { padding: 8px 2px; font-size: 10px; }
+  .standings-pts { font-size: 11px; }
+  .standings-team-name { max-width: 80px; }
+}
 
 /* Utils */
 .live-dot { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; animation: pulse 1.5s infinite; display: inline-block; }

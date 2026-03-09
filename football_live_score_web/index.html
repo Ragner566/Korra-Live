@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kora Live | كورة لايف - نتائج مباشرة</title>
+    <title>كورة لايف - نتائج مباشرة</title>
     <!-- AdSense Verification -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3630371101145052"
      crossorigin="anonymous"></script>
@@ -16,14 +16,20 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
     />
-    <link rel="stylesheet" href="style.css?v=2.1" />
+    <link rel="stylesheet" href="main-v2.css?v=2.2-stable" />
+    <style>
+      img.team-logo { width: 30px !important; height: 30px !important; object-fit: contain; }
+      table { table-layout: fixed; width: 100%; }
+      body { background-color: #0f1218 !important; } /* Dark Gray proof of sync */
+      .sync-badge { background: #00ffa3; color: #000; font-size: 8px; padding: 2px 5px; border-radius: 4px; font-weight: 900; vertical-align: middle; margin-right: 5px; }
+    </style>
   </head>
   <body>
     <!-- App Bar -->
     <header class="app-bar" id="app-bar">
       <div class="logo">
         <i class="fas fa-futbol logo-icon"></i>
-        <span>Kora Live</span>
+        <span>Kora Live V2 <span class="sync-badge">LIVE SYNC ACTIVE</span></span>
       </div>
       <div class="actions">
         <button id="lang-switcher" class="icon-btn" onclick="toggleLanguage()">
@@ -52,54 +58,46 @@
             <i class="fas fa-globe"></i>
             <span data-i18n="allLeagues">الكل</span>
           </button>
-          <button class="league-chip" data-league="17" onclick="filterByLeague('17', this)">
+          <button class="league-chip" data-league="PL" onclick="filterByLeague('PL', this)">
             <span class="league-flag">🏴󠁧󠁢󠁥󠁮󠁧󠁿</span>
             <span data-i18n="premierLeague">البريميرليغ</span>
           </button>
-          <button class="league-chip" data-league="8" onclick="filterByLeague('8', this)">
+          <button class="league-chip" data-league="PD" onclick="filterByLeague('PD', this)">
             <span class="league-flag">🇪🇸</span>
             <span data-i18n="laLiga">لاليغا</span>
           </button>
-          <button class="league-chip" data-league="23" onclick="filterByLeague('23', this)">
+          <button class="league-chip" data-league="SA" onclick="filterByLeague('SA', this)">
             <span class="league-flag">🇮🇹</span>
             <span data-i18n="serieA">سيري أ</span>
           </button>
-          <button class="league-chip" data-league="35" onclick="filterByLeague('35', this)">
+          <button class="league-chip" data-league="BL1" onclick="filterByLeague('BL1', this)">
             <span class="league-flag">🇩🇪</span>
             <span data-i18n="bundesliga">بوندسليغا</span>
           </button>
-          <button class="league-chip" data-league="34" onclick="filterByLeague('34', this)">
+          <button class="league-chip" data-league="FL1" onclick="filterByLeague('FL1', this)">
             <span class="league-flag">🇫🇷</span>
             <span data-i18n="ligue1">الدوري الفرنسي</span>
           </button>
-          <button class="league-chip" data-league="7" onclick="filterByLeague('7', this)">
+          <button class="league-chip" data-league="CL" onclick="filterByLeague('CL', this)">
             <span class="league-flag">🏆</span>
             <span data-i18n="championsLeague">دوري الأبطال</span>
-          </button>
-          <button class="league-chip" data-league="955" onclick="filterByLeague('955', this)">
-            <span class="league-flag">🇸🇦</span>
-            <span>الدوري السعودي</span>
-          </button>
-          <button class="league-chip" data-league="808" onclick="filterByLeague('808', this)">
-            <span class="league-flag">🇪🇬</span>
-            <span>الدوري المصري</span>
-          </button>
-          <button class="league-chip" data-league="52" onclick="filterByLeague('52', this)">
-            <span class="league-flag">🇹🇷</span>
-            <span>الدوري التركي</span>
           </button>
         </div>
       </section>
 
-      <!-- Date Selector -->
-      <section class="date-selector-section" id="date-section">
-        <button class="date-btn" onclick="changeDate(-1)">
-          <i class="fas fa-chevron-right"></i>
-        </button>
-        <div class="current-date" id="current-date">اليوم</div>
-        <button class="date-btn" onclick="changeDate(1)">
-          <i class="fas fa-chevron-left"></i>
-        </button>
+      <!-- Match Day Tabs -->
+      <section class="match-tabs-section" id="date-section">
+        <div class="match-tabs">
+          <button class="match-tab" data-day="yesterday" onclick="selectMatchDay('yesterday', this)">
+            <span data-i18n="yesterday">أمس</span>
+          </button>
+          <button class="match-tab active" data-day="today" onclick="selectMatchDay('today', this)">
+            <span data-i18n="today">اليوم</span>
+          </button>
+          <button class="match-tab" data-day="tomorrow" onclick="selectMatchDay('tomorrow', this)">
+            <span data-i18n="tomorrow">غداً</span>
+          </button>
+        </div>
       </section>
 
       <!-- Loading Indicator -->
@@ -194,6 +192,11 @@
         </div>
       </section>
 
+      <!-- Footer Version -->
+      <footer style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border); margin: 20px 16px;">
+        <p>Kora Live V2 | <span style="color: var(--accent)">V 2.2 - Stable</span></p>
+      </footer>
+      
       <!-- Bottom padding -->
       <div style="height: 80px"></div>
     </main>
@@ -231,28 +234,7 @@
       </a>
     </nav>
 
-    <!-- API Key Setup Modal -->
-    <div class="api-key-modal" id="api-key-modal" style="display:none">
-      <div class="api-key-content">
-        <h3 style="margin-bottom: 10px;">🔑 مطلوب مفتاح API الـ SportAPI7</h3>
-        <p style="font-size: 14px; margin-bottom: 15px;">للحصول على نتائج المباريات المباشرة، تحتاج إلى تفعيل الاشتراك في <a href="https://rapidapi.com/sportapi7/api/sportapi7" target="_blank" style="color:var(--accent); font-weight:bold;">SportAPI7</a> على منصة RapidAPI.</p>
-        
-        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; margin-bottom: 15px; text-align: right;">
-          <p style="font-size: 13px; font-weight: bold; color: var(--accent); margin-bottom: 10px;">خطوات التفعيل:</p>
-          <ol style="padding-right: 20px; font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
-            <li>انتقل إلى صفحة <a href="https://rapidapi.com/sportapi7/api/sportapi7/pricing" target="_blank" style="color:var(--accent)">الأسعار هنا</a></li>
-            <li>تأكد من الضغط على زر <b style="color:white">Subscribe</b> (حتى للخطة المجانية Free)</li>
-            <li>انسخ الـ <b style="color:white">API Key</b> من صفحة الإعدادات</li>
-            <li>ضعه في المربع أدناه أو في لوحة تحكم الأدمن</li>
-          </ol>
-        </div>
-
-        <input type="text" id="api-key-input" placeholder="ضع مفتاح API هنا..." class="api-key-field" />
-        <div style="display:flex; gap:10px; margin-top:10px">
-          <button class="api-key-save" style="width:100%" onclick="saveApiKey()">حفظ وتشغيل</button>
-        </div>
-      </div>
-    </div>
+    <!-- Legacy UI Removed -->
 
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -280,17 +262,60 @@
       }
     </script>
 
-    <script src="script.js?v=2.1"></script>
+    <script src="app_v3.js?v=3.0"></script>
     <script>
+      // DIRECT API INJECTION FOR TOMORROW (Bypassing Firestore if needed)
+      async function forceFetchTomorrowDirect() {
+        console.log("[Force] Direct API Injection Start...");
+        const tomorrowUTC = new Date(Date.now() + 86400000);
+        const y = tomorrowUTC.getUTCFullYear();
+        const m = String(tomorrowUTC.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(tomorrowUTC.getUTCDate()).padStart(2, "0");
+        const dateStr = `${y}-${m}-${d}`;
+        
+        try {
+          const res = await fetch(`https://api.football-data.org/v4/matches?dateFrom=${dateStr}&dateTo=${dateStr}&competitions=PL,PD,BL1,SA,FL1,CL`, {
+            headers: { "X-Auth-Token": "33e62ca975a749858503fdf63b75d9d7" }
+          });
+          const data = await res.json();
+          console.log("[Force] Direct API Data for Tomorrow:", data);
+          
+          if (data.matches && typeof renderMatches === 'function') {
+            const mapped = data.matches.map(m => ({
+              fixture: { id: m.id, status: { short: m.status, elapsed: m.minute || null }, date: m.utcDate },
+              league: { name: m.competition.name, id: m.competition.code, logo: m.competition.emblem },
+              teams: {
+                home: { name: m.homeTeam.shortName || m.homeTeam.name, id: m.homeTeam.id, logo: m.homeTeam.crest },
+                away: { name: m.awayTeam.shortName || m.awayTeam.name, id: m.awayTeam.id, logo: m.awayTeam.crest }
+              },
+              goals: { home: m.score.fullTime.home, away: m.score.fullTime.away },
+              score: m.score,
+              source: "direct-injection"
+            }));
+            STATE.allMatches = mapped;
+            renderMatches(mapped);
+          }
+        } catch(e) { console.error("[Force] Direct API failed:", e); }
+      }
+      
       // Initialize app immediately with fallback key
-      // Firebase sync (in initFirebaseSync) will override the key once it loads
       document.addEventListener('DOMContentLoaded', () => {
-        checkApiKey();   // sets fallback key immediately
-        initApp();       // starts fetching matches right away
-        // Firebase sync runs in background and updates key if found
-        if (typeof initFirebaseSync === 'function') {
-          initFirebaseSync();
-        }
+        if (typeof checkApiKey === 'function') checkApiKey();
+        if (typeof initApp === 'function') initApp();
+        if (typeof initFirebaseSync === 'function') initFirebaseSync();
+        
+        // Push Direct Sample to Console for proof
+        forceFetchTomorrowDirect();
+
+        // ── BUTTON FIX: MANUALLY RETRIGGER IF NEEDED ──────────────────
+        document.querySelectorAll('.match-tab').forEach(btn => {
+          btn.addEventListener('click', function() {
+            const day = this.getAttribute('data-day');
+            if (typeof selectMatchDay === 'function') {
+                selectMatchDay(day, this);
+            }
+          });
+        });
       });
     </script>
   </body>

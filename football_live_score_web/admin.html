@@ -252,12 +252,12 @@
         </main>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
+    <script>
         const firebaseConfig = {
             apiKey: "AIzaSyAW5HJ5z8K0fLPoorqR_F8rG6_ZyIvKfaA",
             authDomain: "korra-b5d32.firebaseapp.com",
@@ -268,16 +268,15 @@
             measurementId: "G-C2KSH4DYY6"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        let currentUser = null;
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const rdb = firebase.database();
 
         // Auto Login Check
-        onAuthStateChanged(auth, (user) => {
+        auth.onAuthStateChanged((user) => {
             if (user) {
-                currentUser = user;
                 document.getElementById('login-overlay').style.display = 'none';
                 document.getElementById('dashboard-ui').style.display = 'flex';
                 document.getElementById('admin-name').textContent = `مرحباً، ${user.email.split('@')[0]}`;
@@ -285,8 +284,21 @@
             }
         });
 
-        function loadInitialData() {
+        async function loadInitialData() {
             initRealTimeStats();
+            const docSnap = await db.collection("settings").doc("global").get();
+            if (docSnap.exists) {
+                const data = docSnap.data();
+                const key = data.korra || data.apiKey || "";
+                document.getElementById('api-key-input').value = key;
+                document.getElementById('api-key-2-input').value = data.rapidApiKey2 || "";
+                document.getElementById('fd-token-input').value = data.footballDataToken || "";
+                document.getElementById('api-sports-input').value = data.apiSportsKey || "";
+                
+                document.getElementById('adsense-id').value = data.adsenseId || "pub-3630371101145052";
+                document.getElementById('propeller-id').value = data.propellerId || "";
+                document.getElementById('interstitial-freq').value = data.adFrequency || 5;
+            }
             // Default to stats tab
             const firstNavItem = document.querySelector('.nav-item');
             if (firstNavItem) switchTab('stats', firstNavItem);
@@ -310,93 +322,24 @@
         };
 
         window.handleSignOut = () => {
-            signOut(auth).then(() => location.reload());
+            auth.signOut().then(() => location.reload());
         };
 
         // Login Handler
         window.handleLogin = async () => {
             const email = document.getElementById('login-email').value;
             const pass = document.getElementById('login-pass').value;
+            const btn = document.querySelector('#login-overlay button');
+            
             try {
-                const btn = document.querySelector('#login-overlay button');
                 btn.textContent = "جاري التحقق...";
-                await signInWithEmailAndPassword(auth, email, pass);
+                await auth.signInWithEmailAndPassword(email, pass);
             } catch (e) {
                 console.error(e);
-                alert("للأسف، بيانات الدخول غير صحيحة.");
-                document.querySelector('#login-overlay button').textContent = "دخول الآن";
+                alert("فشل تسجيل الدخول: " + e.message);
+                btn.textContent = "دخول لوحة التحكم";
             }
         };
-
-        // API Key Testing and Details
-        window.testKey = async () => {
-            const key = document.getElementById('api-key-input').value.trim();
-            const resultDiv = document.getElementById('api-result');
-            const btn = document.getElementById('test-btn');
-            
-            if (!key) return alert("أدخل مفتاحاً أولاً!");
-
-            btn.textContent = "جاري الفحص...";
-            resultDiv.style.display = "block";
-            resultDiv.style.background = "#1c2128";
-            resultDiv.innerHTML = `<p style="color: #448aff;">جاري الاتصال بسيرفرات SportAPI7...</p>`;
-
-            try {
-                const response = await fetch(`https://sportapi7.p.rapidapi.com/api/v1/event/668?key=test`, {
-                    headers: {
-                        'x-rapidapi-host': 'sportapi7.p.rapidapi.com',
-                        'x-rapidapi-key': key
-                    }
-                });
-
-                const limit = response.headers.get('x-ratelimit-requests-limit');
-                const remaining = response.headers.get('x-ratelimit-requests-remaining');
-                
-                if (response.status === 200 || response.status === 404) {
-                    const isPaid = parseInt(limit) > 1000;
-                    resultDiv.innerHTML = `
-                        <div style="color: var(--primary); font-weight: bold; margin-bottom: 5px;">✅ المفتاح يعمل بنجاح!</div>
-                        <div style="font-size: 14px;">
-                            <div>نوع الباقة: <span style="color: ${isPaid ? '#448aff' : 'orange'}">${isPaid ? 'مدفوعة (Pro/Ultra)' : 'مجانية (Basic)'}</span></div>
-                            <div>الطلبات المتاحة: ${limit}</div>
-                            <div>الطلبات المتبقية: ${remaining}</div>
-                        </div>
-                    `;
-                } else if (response.status === 429) {
-                    resultDiv.innerHTML = `<div style="color: #ff3d00;">⚠️ المفتاح صحيح ولكن استهلكت الكوتا الشهرية (429).</div>`;
-                } else {
-                    resultDiv.innerHTML = `<div style="color: #ff3d00;">❌ المفتاح غير صحيح أو غير مفعل (خطأ ${response.status}).</div>`;
-                }
-            } catch (e) {
-                resultDiv.innerHTML = `<div style="color: #ff3d00;">❌ فشل الاتصال. تأكد من جودة الإنترنت.</div>`;
-            }
-            btn.textContent = "فحص المفتاح الآن 🔍";
-        };
-
-        // Data Management
-        async function loadInitialData() {
-            const docSnap = await getDoc(doc(db, "settings", "global"));
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                const key = data.korra || data.apiKey || "";
-                document.getElementById('api-key-input').value = key;
-                document.getElementById('api-key-2-input').value = data.rapidApiKey2 || "";
-                document.getElementById('fd-token-input').value = data.footballDataToken || "";
-                document.getElementById('api-sports-input').value = data.apiSportsKey || "";
-                
-                // Ads Settings
-                document.getElementById('adsense-id').value = data.adsenseId || "pub-3630371101145052";
-                document.getElementById('propeller-id').value = data.propellerId || "";
-                document.getElementById('interstitial-freq').value = data.adFrequency || 5;
-
-                // Update stats card UI
-                if (key.length > 30) {
-                    document.getElementById('api-cost-display').textContent = "$0.00";
-                    document.getElementById('plan-tag').textContent = "مفتاح نشط";
-                }
-            }
-            initCharts();
-        }
 
         window.updateSettings = async () => {
             const key = document.getElementById('api-key-input').value.trim();
@@ -410,7 +353,7 @@
             btn.textContent = "جاري الحفظ والتفعيل...";
 
             try {
-                await setDoc(doc(db, "settings", "global"), {
+                await db.collection("settings").doc("global").set({
                     korra: key,
                     rapidApiKey1: key,
                     rapidApiKey2: key2,
@@ -435,10 +378,9 @@
             const status = document.getElementById('ads-save-status');
             
             btn.textContent = "جاري حفظ الإعلانات...";
-            status.innerHTML = "";
 
             try {
-                await setDoc(doc(db, "settings", "global"), {
+                await db.collection("settings").doc("global").set({
                     adsenseId,
                     propellerId,
                     adFrequency,
@@ -455,27 +397,18 @@
             btn.innerHTML = `حفظ إعدادات التمويل <i class="fas fa-check-circle"></i>`;
         };
 
-        // ============================================
-        // REAL-TIME ANALYTICS LOAD (DB -> UI)
-        // ============================================
-        let earningsChart = null;
-
-        const rdb = getDatabase(app);
-
         function initRealTimeStats() {
             const today = new Date().toISOString().split('T')[0];
 
-            // 1.5 Listen for Live Matches Quota (Realtime DB)
-            onValue(ref(rdb, "/live_matches"), (snapshot) => {
-                if (snapshot.exists()) {
-                    const data = snapshot.val();
+            rdb.ref("/live_matches").on("value", (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
                     const statusEl = document.getElementById('db-status');
                     const planTypeEl = document.getElementById('stat-plan-type');
                     
                     if (data.quotaExceeded) {
                         statusEl.innerText = "Quota Limit!";
                         statusEl.style.color = "#ff2d55";
-                        planTypeEl.innerText = "استهلاك كامل للحصة";
                     } else {
                         statusEl.innerText = "Running";
                         statusEl.style.color = "var(--primary)";
@@ -484,41 +417,24 @@
                 }
             });
 
-            // 1. Listen for Global Stats
-            onSnapshot(doc(db, "analytics", "global"), (docSnap) => {
-                if (docSnap.exists()) {
+            db.collection("analytics").doc("global").onSnapshot((docSnap) => {
+                if (docSnap.exists) {
                     const data = docSnap.data();
                     document.getElementById('stat-total-visits-global').innerText = `إجمالي: ${data.totalVisits || 0}`;
                     document.getElementById('stat-ad-clicks').innerText = data.adClicks || 0;
                     document.getElementById('stat-match-clicks').innerText = data.matchClicks || 0;
-                    
-                    // Estimate earnings ($0.05 per ad click)
                     const est = (data.adClicks || 0) * 0.05;
                     document.getElementById('stat-ad-earnings-est').innerText = `تقديري: $${est.toFixed(2)}`;
                 }
             });
 
-            // 2. Listen for Today's Stats
-            onSnapshot(doc(db, "analytics", "daily", "dates", today), (docSnap) => {
-                if (docSnap.exists()) {
+            db.collection("analytics").doc("daily").collection("dates").doc(today).onSnapshot((docSnap) => {
+                if (docSnap.exists) {
                     document.getElementById('stat-today-visits').innerText = docSnap.data().visits || 0;
                 }
             });
-
-            // 3. (Optional) Load Plan from Key Settings
-            onSnapshot(doc(db, "settings", "global"), (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.korra) document.getElementById('api-key-input').value = data.korra;
-                    if (data.adsenseId) document.getElementById('adsense-id').value = data.adsenseId;
-                    if (data.propellerId) document.getElementById('propeller-id').value = data.propellerId;
-                    if (data.adFrequency) document.getElementById('interstitial-freq').value = data.adFrequency;
-                }
-            });
-
-            // Load Chart Data (Last 7 Days)
-            loadChartData();
         }
+    </script>
 
         async function loadChartData() {
             const chartLabels = [];

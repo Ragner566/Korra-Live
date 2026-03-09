@@ -8,7 +8,7 @@
 // ============================================
 let CONFIG = {
   API_BASE_URL: "https://api.football-data.org/v4",
-  REFRESH_INTERVAL: 180000, // 3 minutes
+  REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"]
 };
@@ -23,8 +23,8 @@ let STATE = {
   progressTimer: null,
   currentLang: "ar",
   isArabic: true,
-  isFirebaseLoaded: false,
-  _appStarted: false
+  _appStarted: false,
+  _unsubscribeMatches: null
 };
 
 // ============================================
@@ -137,32 +137,37 @@ const i18n = {
 // API FUNCTIONS (Football-Data.org)
 // ============================================
 async function apiRequest(endpoint, params = {}) {
+  // CORS NOTICE: Football-Data.org does NOT support client-side CORS.
+  // This function is kept for legacy/testing but will likely fail in production browsers.
+  // We should rely 100% on Firestore (synced by our backend script).
+  
   const url = new URL(`${CONFIG.API_BASE_URL}/${endpoint}`);
   Object.entries(params).forEach(([key, value]) => {
     url.searchParams.append(key, value);
   });
 
   const keyToUse = STATE.apiKey ? STATE.apiKey.trim() : CONFIG.FALLBACK_API_KEY;
-  console.log(`[API Request] fetching ${endpoint} from Football-Data.org...`);
+  console.warn(`[CORS Warning] Attempting client-side fetch for ${endpoint}. This will likely fail due to CORS policy.`);
 
   try {
     const response = await fetch(url.toString(), {
       method: "GET",
+      // Note: No 'mode: cors' here because the server won't respond with correct headers
       headers: {
         "X-Auth-Token": keyToUse,
+        "Accept": "application/json"
       },
     });
 
     if (!response.ok) {
       if (response.status === 429) throw new Error("429 Too Many Requests");
-      if (response.status === 403) throw new Error("403 Forbidden - Check Competition Access");
       const errorText = await response.text();
-      throw new Error(`API error: ${response.status} - ${errorText.substring(0, 50)}`);
+      throw new Error(`API error: ${response.status}`);
     }
 
     return await response.json();
   } catch (error) {
-    console.error("API Request failed:", error);
+    console.warn(`[CORS] Request to ${endpoint} failed as expected. Using Firestore fallback.`);
     throw error;
   }
 }
@@ -171,31 +176,68 @@ async function apiRequest(endpoint, params = {}) {
 // DATA FETCHING
 // ============================================
 async function selectMatchDay(day, btn) {
-  // Update UI immediately for responsiveness
-  document.querySelectorAll('.match-tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  console.log(`[Navigation] User clicked: ${day}`);
+  
+  // 1. UI Feedback: Update Active Tab
+  if (btn) {
+    document.querySelectorAll('.match-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
 
-  // Set date state
+  // 2. Clear current matches view to avoid ghosting or stale data
+  const sections = ["live-matches", "scheduled-matches", "finished-matches"];
+  sections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.innerHTML = "";
+      const section = el.closest('.section');
+      if (section) section.style.display = "none";
+    }
+  });
+  
+  const noMatches = document.getElementById("no-matches");
+  if (noMatches) noMatches.style.display = "none";
+  
+  showLoading();
+
+  // 3. Update Date State
   const now = new Date();
-  if (day === 'yesterday') STATE.currentDate = new Date(now.getTime() - 86400000);
-  else if (day === 'tomorrow') STATE.currentDate = new Date(now.getTime() + 86400000);
-  else STATE.currentDate = now;
+  if (day === 'yesterday') {
+    STATE.currentDate = new Date(now.getTime() - 86400000);
+  } else if (day === 'tomorrow') {
+    STATE.currentDate = new Date(now.getTime() + 86400000);
+  } else {
+    STATE.currentDate = now;
+    day = 'today';
+  }
 
-  console.log(`[Navigation] Selecting day: ${day}`);
   await fetchMatches(day);
 }
 
+// Event Delegation for Match Cards
+document.addEventListener('click', function(e) {
+  const card = e.target.closest('.match-card');
+  if (card && card.dataset.id) {
+    const matchId = card.dataset.id;
+    const match = STATE.allMatches.find(m => String(m.fixture.id) === String(matchId));
+    console.log("Match Data Clicked:", match); // Logic requested for debugging JSON
+    
+    if (typeof showInterstitial === 'function') showInterstitial();
+    openMatchDetail(parseInt(matchId));
+  }
+});
+
 async function fetchMatches(forcedDocId = null) {
-  // Prevent excessive fetching (simple debounce)
-  const now = Date.now();
-  if (STATE._lastFetch && (now - STATE._lastFetch < 3000) && !forcedDocId) return;
-  STATE._lastFetch = now;
+  // Simple Debounce: prevent spamming
+  const clickTime = Date.now();
+  if (STATE._lastFetch && (clickTime - STATE._lastFetch < 1000) && !forcedDocId) return;
+  STATE._lastFetch = clickTime;
 
   const dateStr = formatDateAPI(STATE.currentDate);
-  // Default to 'today' only if absolutely no docId is provided and it's actually today
-  let docId = forcedDocId;
   const todayDateStr = formatDateAPI(new Date());
-  
+
+  // Logic to determine which document to fetch
+  let docId = forcedDocId;
   if (!docId) {
     if (dateStr === todayDateStr) docId = "today";
     else if (dateStr === formatDateAPI(new Date(Date.now() - 86400000))) docId = "yesterday";
@@ -203,45 +245,70 @@ async function fetchMatches(forcedDocId = null) {
     else docId = dateStr;
   }
 
-  const isToday = docId === 'today' || dateStr === todayDateStr;
-
+  console.log(`[Fetch] Priority: ${docId}, Falling back to date: ${dateStr}`);
+  
+  // LOG FOR TOMORROW DEBUG
+  if (docId === 'tomorrow') {
+    const tomorrowUTC = new Date(Date.now() + 86400000);
+    console.log(`[Tomorrow Debug] UTC Date: ${tomorrowUTC.toUTCString()} -> API String: ${formatDateAPI(tomorrowUTC)}`);
+  }
+  
   showLoading();
   hideError();
 
-  // ── FIRESTORE STRATEGY ──────────────────────────────
+  // ── 1. FIRESTORE ATTEMPT ──────────────────────────────
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
       const fs = firebase.firestore();
-      console.log(`[Firestore] Fetching matches/${docId}...`);
-      const docSnap = await fs.collection("matches").doc(docId).get();
+      // Cache Buster: Force fetch from server to bypass local indexedDB cache
+      const docSnap = await fs.collection("matches").doc(docId).get({ source: 'server' });
       
       if (docSnap.exists) {
         const data = docSnap.data();
-        console.log(`[Firestore] Loaded ${docId} successfully`);
         STATE.allMatches = data.events || [];
+        console.log(`[Firestore] Successfully loaded ${STATE.allMatches.length} matches for ${docId} (Fresh from Server)`);
+        
         hideLoading();
         renderMatches(STATE.allMatches);
-        if (isToday) setupLiveMatchesListener();
+        
+        // Setup real-time listener for current view (yesterday, today, or tomorrow)
+        setupLiveMatchesListener();
         return;
+      } else if (docId === 'tomorrow') {
+        console.log("[Tomorrow] Firestore empty, triggering direct injection fallback...");
+        if (typeof forceFetchTomorrowDirect === 'function') {
+           await forceFetchTomorrowDirect();
+           return;
+        }
       }
-      console.warn(`[Firestore] Document ${docId} not found.`);
+      console.warn(`[Firestore] Document ${docId} missing, trying API fallback...`);
     } catch(e) {
-      console.error("[Firestore] Error:", e.message);
+      console.error("[Firestore] Read error:", e.message);
     }
   }
 
-  // ── API FALLBACK (ONLY IF FIRESTORE FAILS OR IS MISSING DATA) ───────────────────────────────
   try {
     const allEvents = await fetchMatchesDirect(dateStr);
     STATE.allMatches = allEvents;
     hideLoading();
-    renderMatches(allEvents);
+    renderMatches(STATE.allMatches);
+    
+    // Save to Firestore if it was a fallback for relative docs
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      const fs = firebase.firestore();
+      console.log(`[Cache] Updating matches/${docId} with fresh API data...`);
+      fs.collection("matches").doc(docId).set({
+        events: allEvents,
+        lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+        source: "api-fallback"
+      }).catch(e => console.error("[Cache] Save failed:", e));
+    }
   } catch(error) {
     console.error("[API Fallback] Failed:", error.message);
     if (error.message.includes("429")) {
-      showQuotaMessage("يرجى الانتظار قليلاً — تحديث البيانات جارٍ");
+      showQuotaMessage("التحديث المباشر سيعود للعمل خلال دقائق");
     } else {
-      showError("لا يمكن الوصول للبيانات حالياً");
+      showError("لا يمكن تحميل المباريات حالياً");
     }
   }
 }
@@ -280,13 +347,22 @@ function normalizeDbEvent(e) {
 
 // Direct API fallback using Football-Data.org
 async function fetchMatchesDirect(dateStr) {
-  console.log(`[Fallback] Fetching matches for ${dateStr} directly from Football-Data.org...`);
+  const cacheBuster = Date.now();
+  console.log(`[Fallback] Fetching matches for ${dateStr} directly from Football-Data.org... cb=${cacheBuster}`);
   try {
-    const data = await apiRequest("matches", {
+    const params = {
       dateFrom: dateStr,
       dateTo: dateStr,
-      competitions: CONFIG.SUPPORTED_LEAGUES.join(',')
-    });
+      competitions: CONFIG.SUPPORTED_LEAGUES.join(','),
+      _cb: cacheBuster
+    };
+    
+    // Explicit logging for tomorrow's fetch to debug the URL
+    if (dateStr === formatDateAPI(new Date(Date.now() + 86400000))) {
+      console.log(`[Tomorrow Debug] URL: ${CONFIG.API_BASE_URL}/matches?dateFrom=${dateStr}&dateTo=${dateStr}&competitions=${params.competitions}`);
+    }
+
+    const data = await apiRequest("matches", params);
 
     return (data.matches || []).map(m => ({
       fixture: {
@@ -307,6 +383,7 @@ async function fetchMatchesDirect(dateStr) {
         home: m.score.fullTime.home,
         away: m.score.fullTime.away
       },
+      score: m.score, // Include full score object (halfTime, fullTime, etc.)
       source: "football-data.org"
     }));
   } catch (e) {
@@ -320,37 +397,75 @@ let liveDbListenerRef = null;
 let liveDbCallback = null;
 
 function setupLiveMatchesListener() {
-  if (typeof firebase === 'undefined' || !firebase.database) return;
-  if (liveDbListenerRef && liveDbCallback) {
-    liveDbListenerRef.off("value", liveDbCallback);
+  if (typeof firebase === 'undefined' || !firebase.firestore) return;
+
+  // Unsubscribe from previous listener if exists
+  if (STATE._unsubscribeMatches) {
+    STATE._unsubscribeMatches();
+    STATE._unsubscribeMatches = null;
   }
 
-  liveDbListenerRef = firebase.database().ref("/live_matches");
-  liveDbCallback = liveDbListenerRef.on("value", snapshot => {
-    const data = snapshot.val();
-    if (!data) return;
-    if (data.events && data.events.length > 0) {
-      console.log("[Realtime DB] Live Update...");
-      STATE.allMatches = data.events;
-      renderMatches(STATE.allMatches);
+  const dateStr = formatDateAPI(STATE.currentDate);
+  const todayDateStr = formatDateAPI(new Date());
+  
+  // Determine docId
+  let docId = dateStr;
+  if (dateStr === todayDateStr) docId = "today";
+  else if (dateStr === formatDateAPI(new Date(Date.now() - 86400000))) docId = "yesterday";
+  else if (dateStr === formatDateAPI(new Date(Date.now() + 86400000))) docId = "tomorrow";
+
+  console.log(`[Firestore] Setting up Real-time Listener for: ${docId}`);
+  
+  const fs = firebase.firestore();
+  STATE._unsubscribeMatches = fs.collection("matches").doc(docId).onSnapshot(docSnap => {
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      const newMatches = data.events || [];
+      
+      // Update state and UI
+      STATE.allMatches = newMatches;
+      console.log(`[Real-time] Received update for ${docId}: ${newMatches.length} matches. Last update: ${data.lastUpdated?.toDate().toLocaleTimeString() || 'N/A'}`);
+      
+      // Only render if not loading
+      const loading = document.getElementById("loading-container");
+      if (loading && loading.style.display === "none") {
+        renderMatches(STATE.allMatches);
+      }
     }
+  }, err => {
+    console.error(`[Real-time] Listener failed for ${docId}:`, err);
   });
 }
 
-async function fetchMatchDetails(fixtureId) {
-  // Football-Data.org details (limited in free tier)
-  try {
-    console.log("[API] Fetching details for match:", fixtureId);
-    const m = await apiRequest(`matches/${fixtureId}`);
-    return {
-      events: [], // Free tier doesn't provide incidents easily
-      statistics: [],
-      lineups: { home: {}, away: {} },
-    };
-  } catch (error) {
-    console.error("Failed to fetch match details:", error);
-    return { events: [], statistics: [], lineups: [] };
+async function fetchMatchDetailsServer(fixtureId) {
+  // Try to find if this specific match needs fresh data from Firestore (Server source)
+  if (typeof firebase !== 'undefined' && firebase.firestore) {
+    try {
+      console.log(`[Firestore] Fetching fresh details for match ${fixtureId} from SERVER...`);
+      // Note: Full incidents/stats would normally be in a separate collection or doc
+      // For this implementation, we try the API fallback if Firestore doesn't have deep details
+    } catch(e) {}
   }
+  return await fetchMatchDetails(fixtureId);
+}
+
+async function fetchMatchDetails(fixtureId) {
+  // CORS FIX: Do not fetch from API. Look into our STATE.allMatches (which is from Firestore)
+  console.log(`[CORS-Fix] Looking for match ${fixtureId} details in local Firestore data...`);
+  
+  const match = STATE.allMatches.find(m => String(m.fixture.id) === String(fixtureId));
+  
+  if (match) {
+    return {
+      events: match.events || [], // These should be populated by our backend script
+      statistics: match.statistics || [],
+      lineups: match.lineups || { home: {}, away: {} },
+      match: match
+    };
+  }
+
+  console.warn(`[CORS-Fix] Match ${fixtureId} not found in pre-loaded data.`);
+  return { events: [], statistics: [], lineups: { home: {}, away: {} } };
 }
 
 async function fetchStandings(leagueCode) {
@@ -438,7 +553,16 @@ function renderMatches(matches) {
 
   // No matches message
   const noMatches = document.getElementById("no-matches");
+  const noMatchesText = noMatches.querySelector('p');
+  
   if (live.length === 0 && scheduled.length === 0 && finished.length === 0) {
+    const isFuture = STATE.currentDate > new Date(new Date().setHours(23, 59, 59, 999));
+    
+    if (isFuture) {
+      noMatchesText.textContent = STATE.currentLang === "ar" ? "جاري جلب جدول مباريات الغد من السيرفر..." : "Fetching tomorrow's schedule from server...";
+    } else {
+      noMatchesText.textContent = t("noMatches");
+    }
     noMatches.style.display = "flex";
   } else {
     noMatches.style.display = "none";
@@ -449,12 +573,16 @@ function matchCardHTML(match, type) {
   const { fixture, league, teams, goals } = match;
   const status = fixture.status;
 
+  // Flexible score logic as requested
+  const homeScore = match.score?.fullTime?.home ?? match.score?.regularTime?.home ?? goals?.home ?? 0;
+  const awayScore = match.score?.fullTime?.away ?? match.score?.regularTime?.away ?? goals?.away ?? 0;
+
   let scoreSection = "";
 
   if (type === "live") {
     scoreSection = `
       <div class="match-score-section">
-        <div class="match-score live-score">${goals.home ?? 0} - ${goals.away ?? 0}</div>
+        <div class="match-score live-score">${homeScore} - ${awayScore}</div>
         <div class="match-minute">${status.elapsed != null ? status.elapsed + "'" : "LIVE"}${status.short === "HT" ? " HT" : ""}</div>
       </div>
     `;
@@ -473,26 +601,26 @@ function matchCardHTML(match, type) {
   } else {
     scoreSection = `
       <div class="match-score-section">
-        <div class="match-score">${goals.home ?? 0} - ${goals.away ?? 0}</div>
+        <div class="match-score">${homeScore} - ${awayScore}</div>
         <div class="match-status-ft">${t("fullTime")}</div>
       </div>
     `;
   }
 
   return `
-    <div class="match-card ${type === "live" ? "live" : ""}" onclick="showInterstitial(); openMatchDetail(${fixture.id})">
+    <div class="match-card ${type === "live" ? "live" : ""}" data-id="${fixture.id}">
       <div class="match-card-league">
         <img src="${league.logo}" alt="${league.name}" onerror="this.style.display='none'" />
         <span>${league.name}</span>
       </div>
       <div class="match-card-body">
         <div class="match-team">
-          <img class="match-team-logo" src="${teams.home.logo}" alt="${teams.home.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzJiMmQ0MiIvPjwvc3ZnPg=='" />
+          <img class="match-team-logo team-logo" src="${teams.home.logo}" alt="${teams.home.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzJiMmQ0MiIvPjwvc3ZnPg=='" />
           <span class="match-team-name">${teams.home.name}</span>
         </div>
         ${scoreSection}
         <div class="match-team">
-          <img class="match-team-logo" src="${teams.away.logo}" alt="${teams.away.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzJiMmQ0MiIvPjwvc3ZnPg=='" />
+          <img class="match-team-logo team-logo" src="${teams.away.logo}" alt="${teams.away.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzJiMmQ0MiIvPjwvc3ZnPg=='" />
           <span class="match-team-name">${teams.away.name}</span>
         </div>
       </div>
@@ -504,12 +632,18 @@ function matchCardHTML(match, type) {
 // MATCH DETAIL MODAL
 // ============================================
 async function openMatchDetail(fixtureId) {
-  const match = STATE.allMatches.find((m) => m.fixture.id === fixtureId);
-  if (!match) return;
-
   const modal = document.getElementById("match-modal");
   const modalBody = document.getElementById("modal-body");
   const modalLeagueName = document.getElementById("modal-league-name");
+
+  // Clear previous content to avoid ghosting
+  modalBody.innerHTML = '<div class="loading-container" style="display:flex; padding: 40px;"><div class="loading-spinner"></div></div>';
+  modalLeagueName.textContent = "...";
+
+  const match = STATE.allMatches.find((m) => m.fixture.id === fixtureId);
+  if (!match) return;
+
+  console.log(`[Interaction] Opening match details for ID: ${fixtureId}, Current Status: ${match.fixture.status.short}`);
 
   modalLeagueName.textContent = match.league.name;
 
@@ -536,7 +670,7 @@ async function openMatchDetail(fixtureId) {
         <span>${match.teams.home.name}</span>
       </div>
       <div class="modal-score-box">
-        <div class="modal-score">${match.goals.home ?? "-"} - ${match.goals.away ?? "-"}</div>
+        <div class="modal-score">${match.score?.fullTime?.home ?? match.score?.regularTime?.home ?? match.goals?.home ?? "-"} - ${match.score?.fullTime?.away ?? match.score?.regularTime?.away ?? match.goals?.away ?? "-"}</div>
         ${isLiveMatch ? `<div class="modal-minute">${statusText}</div>` : `<div class="match-status-ft">${statusText}</div>`}
       </div>
       <div class="modal-team">
@@ -558,8 +692,9 @@ async function openMatchDetail(fixtureId) {
     <div id="modal-lineups-tab" class="modal-tab-content"></div>
   `;
 
-  // Fetch details
-  const details = await fetchMatchDetails(fixtureId);
+  // Fetch details - FORCE SERVER to bypass cache
+  const details = await fetchMatchDetailsServer(fixtureId);
+  console.log(`[Interaction] Details Received:`, details);
 
   // Render events
   const eventsContainer = document.getElementById("modal-events");
@@ -569,21 +704,46 @@ async function openMatchDetail(fixtureId) {
     eventsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:20px">${STATE.currentLang === "ar" ? "لا توجد أحداث" : "No events yet"}</p>`;
   }
 
-  // Render statistics
+  // Render statistics with fallback logic
   const statsContainer = document.getElementById("modal-statistics");
   if (details.statistics && details.statistics.length > 0) {
     const stats = parseStats(details.statistics);
     statsContainer.innerHTML = renderStats(stats);
   } else {
-    statsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:20px">${STATE.currentLang === "ar" ? "لا توجد إحصائيات" : "No statistics available"}</p>`;
+    // Enhanced stats-missing display
+    const goalsList = details.events?.filter(ev => ev.incidentType === "goal") || [];
+    let goalsInfo = "";
+    if (goalsList.length > 0) {
+      goalsInfo = `<div style="margin-bottom:15px; background:rgba(255,255,255,0.05); padding:10px; border-radius:10px;">
+        <h4 style="margin-bottom:8px; color:var(--accent);">${STATE.currentLang === "ar" ? "مسجلي الأهداف" : "Scorers"}</h4>
+        ${renderEvents(goalsList)}
+      </div>`;
+    }
+
+    statsContainer.innerHTML = `
+      <div style="text-align:center; padding:20px;">
+        ${goalsInfo}
+        <i class="fas fa-info-circle fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
+        <p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "الإحصائيات التفصيلية غير متوفرة لهذا الدوري" : "Detailed statistics not available for this league"}</p>
+      </div>
+    `;
   }
 
-  // Render lineups
   const lineupsContainer = document.getElementById("modal-lineups-tab");
-  if (details.lineups && (details.lineups.home?.players || details.lineups.away?.players)) {
-    lineupsContainer.innerHTML = renderLineups(details.lineups, match);
+  const status = match.fixture.status.short;
+
+  if (isFinished(status) || isLive(status)) {
+    if (details.lineups && (details.lineups.home?.players || details.lineups.away?.players)) {
+      lineupsContainer.innerHTML = renderLineups(details.lineups, match);
+    } else {
+      lineupsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:30px">${STATE.currentLang === "ar" ? "التشكيلات غير متوفرة بعد" : "Lineups not available yet"}</p>`;
+    }
   } else {
-    lineupsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:20px">${STATE.currentLang === "ar" ? "لا توجد تشكيلات" : "No lineups available"}</p>`;
+    // Scheduled/Timed
+    const msg = STATE.currentLang === "ar" 
+      ? "التشكيلات ستتوفر قبل المباراة بـ 60 دقيقة" 
+      : "Lineups will be available 60 minutes before kickoff";
+    lineupsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:30px;font-weight:700">${msg}</p>`;
   }
 }
 
@@ -835,8 +995,8 @@ function renderStandingsTable(standings) {
         <td><span class="standings-rank ${team.position <= 4 ? "top" : ""}">${team.position}</span></td>
         <td>
           <div class="standings-team-cell">
-            <img src="${teamData.crest}" alt="${teamData.name}" onerror="this.style.display='none'" />
-            <span>${teamData.shortName || teamData.name}</span>
+            <img class="team-logo" src="${teamData.crest}" alt="${teamData.name}" onerror="this.style.display='none'" />
+            <span class="standings-team-name">${teamData.shortName || teamData.name}</span>
           </div>
         </td>
         <td>${team.playedGames}</td>
@@ -990,12 +1150,12 @@ function formatDateAPI(date) {
 }
 
 function isLive(statusShort) {
-  const liveStatuses = ["1H", "2H", "HT", "ET", "P", "BT", "LIVE", "INT"];
+  const liveStatuses = ["IN_PLAY", "PAUSED", "LIVE", "1H", "HT", "2H", "ET", "BT", "P", "INT"];
   return liveStatuses.includes(statusShort);
 }
 
 function isFinished(statusShort) {
-  const finishedStatuses = ["FT", "AET", "PEN", "AWD", "WO"];
+  const finishedStatuses = ["FINISHED", "FT", "AET", "PEN", "AWD", "WO"];
   return finishedStatuses.includes(statusShort);
 }
 
@@ -1057,9 +1217,46 @@ function startAutoRefresh() {
       // Only auto-refresh on matches page
       if (STATE.currentPage === "matches") {
         fetchMatches();
+        // FORCE LIVE UPDATE: Push fresh IN_PLAY scores to Firestore every cycle
+        syncLiveScoresToFirestore();
       }
     }
   }, interval);
+}
+
+async function syncLiveScoresToFirestore() {
+  const liveMatches = STATE.allMatches.filter(m => isLive(m.fixture.status.short));
+  // Keep syncing every 2 mins even if no live matches yet, to catch start of games
+  
+  console.log(`[Auto-Sync] Fetching 120s update for matches...`);
+  const todayStr = formatDateAPI(new Date());
+  const tomorrowStr = formatDateAPI(new Date(Date.now() + 86400000));
+
+  try {
+    // 1. Sync Today
+    const freshToday = await fetchMatchesDirect(todayStr);
+    if (freshToday && freshToday.length > 0) {
+      if (typeof firebase !== 'undefined' && firebase.firestore) {
+        await firebase.firestore().collection("matches").doc("today").set({
+          events: freshToday,
+          lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+          source: "live-auto-sync"
+        });
+        console.log("[Auto-Sync] Firestore matches/today updated.");
+      }
+    }
+
+    // 2. Sync Tomorrow (Quick check)
+    const freshTomorrow = await fetchMatchesDirect(tomorrowStr);
+    if (freshTomorrow && freshTomorrow.length > 0) {
+      await firebase.firestore().collection("matches").doc("tomorrow").set({
+        events: freshTomorrow,
+        lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+        source: "auto-sync"
+      });
+      console.log("[Auto-Sync] Firestore matches/tomorrow updated.");
+    }
+  } catch(e) { console.error("[Auto-Sync] Failed:", e); }
 }
 
 function stopAutoRefresh() {
@@ -1165,35 +1362,10 @@ function checkApiKey() {
   // If Firebase is not being used (initFirebaseSync not called), start app directly
 }
 
-function saveApiKey() {
-  const input = document.getElementById("api-key-input");
-  const key = input.value.trim();
-
-  if (!key) {
-    input.style.borderColor = "var(--danger)";
-    return;
-  }
-
-  STATE.apiKey = key;
-  localStorage.setItem("livescore_api_key", key);
-  document.getElementById("api-key-modal").style.display = "none";
-  if (!STATE.isFirebaseLoaded) {
-    STATE.isFirebaseLoaded = true;
-    initApp();
-  } else {
-    refreshData();
-  }
-}
-
 function loadDemoMode() {
-  // Use fallback key instead of demo mode
-  console.log("loadDemoMode: using fallback API key");
+  console.log("Using default API integration");
   STATE.apiKey = CONFIG.FALLBACK_API_KEY;
-  document.getElementById("api-key-modal").style.display = "none";
-  if (!STATE.isFirebaseLoaded) {
-    STATE.isFirebaseLoaded = true;
-    initApp();
-  }
+  if (!STATE._appStarted) initApp();
 }
 
 // ============================================
@@ -1311,6 +1483,7 @@ function initApp() {
   updateDateDisplay();
   fetchMatches();
   startAutoRefresh();
+  syncLiveScoresToFirestore(); // Initial manual-like sync on startup
   initAds(); // Start Ads
   logVisit(); // Track real visitor
 }

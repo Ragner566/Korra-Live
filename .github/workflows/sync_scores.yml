@@ -1,0 +1,30 @@
+name: Football Data Sync
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    # Allows manual trigger from GitHub UI
+
+jobs:
+  sync_scores:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install Dependencies
+        run: |
+          npm install axios firebase-admin
+
+      - name: Run Sync Script
+        env:
+          # This secret must be set in GitHub Repository Settings -> Secrets and variables -> Actions
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node sync_script.js
