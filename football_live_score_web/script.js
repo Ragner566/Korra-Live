@@ -184,117 +184,178 @@ async function apiRequest(endpoint, params = {}) {
 // ============================================
 async function fetchMatches() {
   const dateStr = formatDateAPI(STATE.currentDate);
-  const isToday = Object.is(STATE.currentDate.setHours(0,0,0,0), new Date().setHours(0,0,0,0));
+  const todayStr = formatDateAPI(new Date());
+  const isToday = dateStr === todayStr;
 
   showLoading();
   hideError();
 
-  try {
-    let allEvents = [];
+  // ── DATABASE-FIRST STRATEGY ──────────────────────────────
+  // For today: read from Firebase Realtime DB (populated by GitHub Actions every 15 min)
+  // For other dates: call API directly
+  if (isToday && typeof firebase !== 'undefined' && firebase.database) {
+    try {
+      console.log("[DB-First] Reading Firebase Realtime DB...");
+      const snap = await firebase.database().ref("/live_matches").once("value");
+      const dbData = snap.val();
 
-    // If TODAY, we fetch Live data from Firebase Realtime DB to save quota!
-    if (isToday && typeof firebase !== 'undefined' && firebase.database) {
-      console.log("Fetching live matches directly from Firebase Realtime DB...");
-      try {
-        const liveSnapshot = await firebase.database().ref("/live_matches").once("value");
-        const liveDataRaw = liveSnapshot.val();
-        
-        // Also fetch scheduled for today just in case, but prefer DB
-        const scheduledData = await apiRequest(`api/v1/sport/football/scheduled-events/${dateStr}`);
-        
-        const scheduledEvents = scheduledData.events || [];
-        const liveEvents = (liveDataRaw && liveDataRaw.events) ? liveDataRaw.events : [];
-        
-        // Merge results
-        const eventIds = new Set();
-        const combined = [...liveEvents, ...scheduledEvents].filter(event => {
-          if (!event || !event.id || eventIds.has(event.id)) return false;
-          eventIds.add(event.id);
-          return true;
-        });
-
-        allEvents = combined.map(mapSportAPI7ToStandard);
-        
-        // Set up real-time listener ONLY for today (optional but gives live feel)
-        setupLiveMatchesListener(); 
-
-      } catch(e) {
-        console.warn("Failed to read from Firebase, falling back to direct API:", e);
-        allEvents = await fetchMatchesDirect(dateStr);
+      // ── QUOTA EXCEEDED ─────────────────────────────────
+      if (dbData && dbData.quotaExceeded) {
+        hideLoading();
+        showQuotaMessage(dbData.quotaMessage || "سيتم تحديث النتائج قريباً");
+        if (dbData.events && dbData.events.length > 0) {
+          const events = dbData.events.map(normalizeDbEvent);
+          STATE.allMatches = events;
+          renderMatches(events);
+        }
+        setupLiveMatchesListener();
+        return;
       }
-    } else {
-      // Historical or future dates go direct to API
-      allEvents = await fetchMatchesDirect(dateStr);
-    }
 
+      // ── FRESH DATA FROM DB ───────────────────────────
+      if (dbData && dbData.events && dbData.events.length > 0) {
+        const events = dbData.events.map(normalizeDbEvent);
+        STATE.allMatches = events;
+        hideLoading();
+        renderMatches(events);
+        setupLiveMatchesListener();
+        return;
+      }
+
+      // DB empty — fall through to direct API
+      console.warn("[DB-First] DB empty, calling API directly...");
+    } catch(e) {
+      console.warn("[DB-First] Firebase read failed, using API:", e.message);
+    }
+  }
+
+  // ── DIRECT API FALLBACK ───────────────────────────────
+  try {
+    const allEvents = await fetchMatchesDirect(dateStr);
     STATE.allMatches = allEvents;
     renderMatches(allEvents);
-  } catch (error) {
-    showError(error.message);
+  } catch(error) {
+    if (error.message.includes("429")) {
+      showQuotaMessage("سيتم تحديث النتائج قريباً — تجاوزنا الحد اليومي مؤقتاً");
+    } else {
+      showError(error.message);
+    }
   }
 }
 
-// Fallback logic for direct API requests
-async function fetchMatchesDirect(dateStr) {
-    console.log("Staggering API calls to avoid 429 error (Direct)...");
-    
-    // Call 1: Scheduled Events
-    const scheduledData = await apiRequest(`api/v1/sport/football/scheduled-events/${dateStr}`);
-    
-    // Wait for 2.5 seconds between calls (extra safe for free tier)
-    await new Promise(resolve => setTimeout(resolve, 2500));
-    
-    // Call 2: Live Events
-    const liveData = await apiRequest(`api/v1/sport/football/events/live`);
+// Shows a soft banner instead of a hard error
+function showQuotaMessage(msg) {
+  const old = document.getElementById("quota-banner");
+  if (old) old.remove();
 
-    const scheduledEvents = scheduledData.events || [];
-    const liveEvents = liveData.events || [];
-    
-    // Merge results
-    const eventIds = new Set();
-    const combined = [...liveEvents, ...scheduledEvents].filter(event => {
-      if (!event || !event.id || eventIds.has(event.id)) return false;
-      eventIds.add(event.id);
-      return true;
-    });
-
-    return combined.map(mapSportAPI7ToStandard);
+  const banner = document.createElement("div");
+  banner.id = "quota-banner";
+  banner.style.cssText = [
+    "background:linear-gradient(135deg,#1a2a1a,#0d1f2d)",
+    "border:1px solid rgba(0,255,163,0.3)",
+    "border-radius:16px",
+    "padding:24px",
+    "margin:20px 16px",
+    "text-align:center",
+    "color:#fff",
+    "font-family:'Tajawal',sans-serif"
+  ].join(";");
+  banner.innerHTML = `
+    <div style="font-size:32px;margin-bottom:10px">⏱️</div>
+    <div style="font-size:16px;font-weight:700;color:#00ffa3;margin-bottom:8px">${msg}</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.5)">يتم تجديد البيانات تلقائياً. شكراً لصبركم.</div>
+  `;
+  const container = document.getElementById("matches-container") || document.getElementById("main-content");
+  if (container) container.prepend(banner);
+  else document.body.prepend(banner);
 }
 
-// Global listener object so we don't attach multiple
+// Normalize events from Football-Data.org / API-Sports format stored in DB
+function normalizeDbEvent(e) {
+  // Already SportAPI7 format (has status.type object)
+  if (e.status && typeof e.status === "object" && e.status.type) {
+    return mapSportAPI7ToStandard(e);
+  }
+
+  // Football-Data.org / API-Sports string status
+  const statusMap = {
+    "SCHEDULED": "NS", "TIMED": "NS",
+    "IN_PLAY": "LIVE", "1H": "LIVE", "2H": "LIVE", "ET": "LIVE", "P": "LIVE",
+    "PAUSED": "HT", "HALFTIME": "HT",
+    "FINISHED": "FT", "AWARDED": "FT",
+    "SUSPENDED": "SUSP", "POSTPONED": "PST", "CANCELLED": "CAN"
+  };
+  const statusShort = statusMap[(e.status || "").toUpperCase()] || e.status || "NS";
+  const isLive = ["LIVE", "HT"].includes(statusShort);
+
+  return {
+    id: e.id,
+    homeTeam: { name: e.homeTeam?.name || "—", logo: null },
+    awayTeam: { name: e.awayTeam?.name || "—", logo: null },
+    homeScore: e.score?.home ?? (isLive ? 0 : null),
+    awayScore: e.score?.away ?? (isLive ? 0 : null),
+    homeHalf:  e.score?.halfHome ?? null,
+    awayHalf:  e.score?.halfAway ?? null,
+    status: statusShort,
+    statusDisplay: statusShort,
+    startTime: e.utcDate
+      ? new Date(e.utcDate).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })
+      : "--:--",
+    league: { id: 0, name: e.competition?.name || "—", logo: null },
+    elapsed: e.minute ?? null,
+    source: e.source || "db"
+  };
+}
+
+// Direct API fallback when DB is empty
+async function fetchMatchesDirect(dateStr) {
+  console.log("Direct API: fetching scheduled + live...");
+  const scheduledData = await apiRequest(`api/v1/sport/football/scheduled-events/${dateStr}`);
+  await new Promise(r => setTimeout(r, 2500));
+  const liveData = await apiRequest(`api/v1/sport/football/events/live`);
+
+  const eventIds = new Set();
+  return [...(liveData.events||[]), ...(scheduledData.events||[])]
+    .filter(ev => { if (!ev?.id || eventIds.has(ev.id)) return false; eventIds.add(ev.id); return true; })
+    .map(mapSportAPI7ToStandard);
+}
+
+// Global Realtime DB listener
 let liveDbListenerRef = null;
 let liveDbCallback = null;
 
 function setupLiveMatchesListener() {
   if (liveDbListenerRef && liveDbCallback) {
-     liveDbListenerRef.off("value", liveDbCallback);
+    liveDbListenerRef.off("value", liveDbCallback);
   }
-  
-  if (typeof firebase !== 'undefined' && firebase.database) {
-     liveDbListenerRef = firebase.database().ref("/live_matches");
-     liveDbCallback = liveDbListenerRef.on("value", (snapshot) => {
-         const data = snapshot.val();
-         if (data && data.events) {
-            console.log("Realtime DB Updated! Refreshing view automatically...");
-            const liveEventsMapped = data.events.map(mapSportAPI7ToStandard);
-            
-            // Re-merge with existing scheduled matches inside STATE.allMatches
-            const newMatchesList = [...STATE.allMatches];
-            
-            liveEventsMapped.forEach(liveEv => {
-                const idx = newMatchesList.findIndex(m => m.id === liveEv.id);
-                if (idx !== -1) {
-                    newMatchesList[idx] = Object.assign(newMatchesList[idx], liveEv);
-                } else {
-                    newMatchesList.push(liveEv);
-                }
-            });
-            
-            STATE.allMatches = newMatchesList;
-            renderMatches(newMatchesList);
-         }
-     });
-  }
+  if (typeof firebase === 'undefined' || !firebase.database) return;
+
+  liveDbListenerRef = firebase.database().ref("/live_matches");
+  liveDbCallback = liveDbListenerRef.on("value", snapshot => {
+    const data = snapshot.val();
+    if (!data) return;
+
+    if (data.quotaExceeded) {
+      showQuotaMessage(data.quotaMessage || "سيتم تحديث النتائج قريباً");
+      return;
+    }
+
+    const banner = document.getElementById("quota-banner");
+    if (banner) banner.remove();
+
+    if (data.events && data.events.length > 0) {
+      console.log("[Realtime DB] Updated — refreshing view...");
+      const mapped = data.events.map(normalizeDbEvent);
+      const updated = [...STATE.allMatches];
+      mapped.forEach(ev => {
+        const idx = updated.findIndex(m => m.id === ev.id);
+        if (idx !== -1) updated[idx] = Object.assign(updated[idx], ev);
+        else updated.push(ev);
+      });
+      STATE.allMatches = updated;
+      renderMatches(updated);
+    }
+  });
 }
 
 // Normalization layer for SportAPI7

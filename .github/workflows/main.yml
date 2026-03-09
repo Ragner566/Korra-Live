@@ -1,13 +1,14 @@
-name: Fetch Kora Live Scores
+name: Kora Live - Smart Score Fetcher
 
 on:
   schedule:
-    - cron: "0 * * * *" # Run every hour (saves API quota)
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+    - cron: "*/15 * * * *" # Every 15 minutes — smart cache inside will skip if not needed
+  workflow_dispatch: # Manual trigger from GitHub UI
 
 jobs:
   fetch-scores:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout repository
@@ -24,4 +25,8 @@ jobs:
       - name: Fetch and Save Scores
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          API_SPORTS_KEY: ${{ secrets.API_SPORTS_KEY }}
+          RAPID_API_KEY_1: ${{ secrets.RAPID_API_KEY_1 }}
+          RAPID_API_KEY_2: ${{ secrets.RAPID_API_KEY_2 }}
         run: node fetch-scores.js
