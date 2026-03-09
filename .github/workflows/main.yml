@@ -2,7 +2,7 @@ name: Fetch Kora Live Scores
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # Run every 5 minutes
+    - cron: "0 * * * *" # Run every hour (saves API quota)
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:

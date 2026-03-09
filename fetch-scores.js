@@ -71,10 +71,21 @@ async function fetchWithKeyRotation(url, params = {}) {
 async function run() {
   console.log("=== Kora Live (GitHub Actions): Fetching live matches ===");
   const today = new Date().toISOString().split("T")[0];
-  const url = `https://${API_HOST}/api/v1/sport/football/events/live`;
+
+  // First try live events, then fallback to scheduled
+  const liveUrl = `https://${API_HOST}/api/v1/sport/football/events/live`;
+  const scheduledUrl = `https://${API_HOST}/api/v1/sport/football/scheduled-events/${today}`;
 
   try {
-    const data = await fetchWithKeyRotation(url);
+    let data = null;
+    
+    // Try live first
+    try {
+      data = await fetchWithKeyRotation(liveUrl);
+    } catch(liveErr) {
+      console.warn("Live endpoint failed, trying scheduled...");
+      data = await fetchWithKeyRotation(scheduledUrl);
+    }
 
     if (!data || !data.events) {
       console.log("No live events data returned.");
