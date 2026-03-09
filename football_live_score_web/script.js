@@ -213,17 +213,21 @@ async function fetchMatches() {
       }
 
       // ── FRESH DATA FROM DB ───────────────────────────
-      if (dbData && dbData.events && dbData.events.length > 0) {
-        const events = dbData.events.map(normalizeDbEvent);
+      if (dbData && dbData.events) {
+        const events = (dbData.events || []).map(normalizeDbEvent);
         STATE.allMatches = events;
         hideLoading();
         renderMatches(events);
         setupLiveMatchesListener();
-        return;
+        console.log("[DB-First] Success. Events:", events.length);
+        return; // HALT HERE. Do not call API for today if DB connection worked.
       }
 
-      // DB empty — fall through to direct API
-      console.warn("[DB-First] DB empty, calling API directly...");
+      // DB empty or null — but connection worked
+      console.warn("[DB-First] DB is empty for today. No fallback to prevent 429.");
+      hideLoading();
+      renderMatches([]); // Show "No Matches"
+      return;
     } catch(e) {
       console.warn("[DB-First] Firebase read failed, using API:", e.message);
     }
