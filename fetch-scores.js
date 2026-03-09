@@ -11,7 +11,7 @@ require('dotenv').config();
 const APIS = {
   footballData: {
     name: "Football-Data.org",
-    token: process.env.FOOTBALL_DATA_TOKEN || "YOUR_FOOTBALL_DATA_TOKEN",
+    token: process.env.FOOTBALL_DATA_TOKEN || "33e62ca975a749858503fdf63b75d9d7",
     baseUrl: "https://api.football-data.org/v4",
     dailyLimit: 9999, // practically unlimited for fixtures
     fetch: fetchFromFootballData
