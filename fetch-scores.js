@@ -7,9 +7,9 @@ require('dotenv').config();
 // ضغط هنا مفاتيحك الـ 3 الخاصة بـ RapidAPI الوهمية/الحقيقية
 // ============================================================
 const API_KEYS = [
-  "YOUR_RAPIDAPI_KEY_1",
-  "YOUR_RAPIDAPI_KEY_2",
-  "YOUR_RAPIDAPI_KEY_3",
+  "25603f0a6emsh854d8c40c5ed2adp15d8f1jsn5e59f1e42a5d", // المفتاح الأساسي - غيره بمفتاح احتياطي إذا امتلكت واحداً
+  "YOUR_RAPIDAPI_KEY_2", // مفتاح احتياطي 2 (اختياري)
+  "YOUR_RAPIDAPI_KEY_3", // مفتاح احتياطي 3 (اختياري)
 ];
 
 const API_HOST = "sportapi7.p.rapidapi.com";
