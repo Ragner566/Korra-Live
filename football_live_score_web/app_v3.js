@@ -249,15 +249,27 @@ async function fetchMatches(forcedDocId = null) {
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
       const fs = firebase.firestore();
-      const docSnap = await fs.collection("matches").doc(docId).get();
+      // ALWAYS try to fetch the explicit date doc from SERVER to avoid cache shift
+      const docSnap = await fs.collection("matches").doc(docId).get({ source: 'server' });
       
       if (docSnap.exists) {
         const data = docSnap.data();
         STATE.allMatches = data.events || [];
         console.log(`[Firestore] Successfully loaded ${STATE.allMatches.length} matches for ${docId}`);
       } else {
-        console.warn(`[Firestore] Document ${docId} missing, using empty list.`);
-        STATE.allMatches = [];
+        console.warn(`[Firestore] Document ${docId} missing on server, trying fallbacks...`);
+        // Fallback to today/tomorrow/yesterday labels IF the date doc is missing
+        const labels = ["today", "yesterday", "tomorrow"];
+        let dataFound = false;
+        for (const label of labels) {
+            const lDoc = await fs.collection("matches").doc(label).get();
+            if (lDoc.exists && lDoc.data().date === dateStr) {
+                STATE.allMatches = lDoc.data().events || [];
+                dataFound = true;
+                break;
+            }
+        }
+        if (!dataFound) STATE.allMatches = [];
       }
       
       hideLoading();
@@ -726,44 +738,36 @@ async function openMatchDetail(fixtureId) {
 
 function renderEvents(incidents) {
   let html = '<div class="events-timeline">';
-  // SportAPI7 provides an array of incidents directly
   if (!Array.isArray(incidents)) return html + '</div>';
   
   // Sort by time ascending
-  const sorted = [...incidents].sort((a, b) => (a.time || 0) - (b.time || 0));
+  const sorted = [...incidents].sort((a, b) => (a.time || a.minute || 0) - (b.time || b.minute || 0));
 
   sorted.forEach((ev) => {
-    let iconClass = "subst";
-    let label = "⚡";
-    let detailText = ev.playerName || ev.player?.name || "";
+    let iconClass = "goal";
+    let label = "⚽";
+    let detailText = ev.playerName || ev.player?.name || ev.scorer?.name || "Goal";
+    let time = ev.time || ev.minute || "";
 
-    if (ev.incidentType === "goal") {
-      iconClass = "goal";
-      label = "⚽";
-    } else if (ev.incidentType === "card") {
-      if (ev.incidentClass === "yellow") {
-         iconClass = "card-yellow";
-         label = "🟡";
-      } else if (ev.incidentClass === "red") {
-         iconClass = "card-red";
-         label = "🔴";
-      } else {
-         iconClass = "card-yellow";
-         label = "�";
-      }
-    } else if (ev.incidentType === "substitution") {
-      iconClass = "subst";
-      label = "🔄";
-      detailText = `${ev.playerIn?.name || ""} <small>🔄 ${ev.playerOut?.name || ""}</small>`;
+    // Football-Data.org goal structure support
+    if (ev.type && ev.type.includes("GOAL")) {
+        iconClass = "goal";
+        label = "⚽";
+        if (ev.type === "OG") { label = "🥅"; detailText += " (OG)"; }
+        if (ev.type === "PENALTY") { label = "🎯"; detailText += " (P)"; }
+    } else if (ev.incidentType === "card" || ev.type === "CARD") {
+       const isRed = ev.incidentClass === "red" || ev.card === "RED";
+       iconClass = isRed ? "card-red" : "card-yellow";
+       label = isRed ? "🔴" : "🟡";
     }
 
-    // Determine side based on isHome
+    // Determine side (simplified for football-data.org if isHome is missing)
     const alignClass = ev.isHome ? "home-event" : "away-event";
 
     html += `
       <div class="event-item ${alignClass}">
         <div class="event-icon ${iconClass}">${label}</div>
-        <div class="event-time">${ev.time || ""}'</div>
+        <div class="event-time">${time}'</div>
         <div class="event-detail">
           ${detailText}
         </div>
