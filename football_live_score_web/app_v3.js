@@ -211,7 +211,7 @@ async function selectMatchDay(day, btn) {
     day = 'today';
   }
 
-  await fetchMatches(day);
+  await fetchMatches(null);
 }
 
 // Event Delegation for Match Cards
@@ -236,9 +236,10 @@ async function fetchMatches(forcedDocId = null) {
   const dateStr = formatDateAPI(STATE.currentDate);
   const todayDateStr = formatDateAPI(new Date());
 
-  // Logic to determine docId: prioritze the date string document (e.g., 2026-03-11)
-  // Our sync script now writes to BOTH 'today' and the date string.
-  let docId = forcedDocId || dateStr;
+  // Logic to determine docId: ALWAYS use the calculated dateStr (e.g. 2026-03-11)
+  // Our sync script writes specifically to date-named documents.
+  // Using aliases like 'today' causes shifts between timezones.
+  let docId = dateStr;
   
   console.log(`[Fetch] Priority: ${docId}, Date: ${dateStr}`);
   
@@ -551,7 +552,9 @@ function matchCardHTML(match, type) {
 
   if (type === "live") {
     // Show elapsed minute if available (e.g., 65')
-    const minuteDisplay = (status.elapsed && status.elapsed !== "undefined") ? status.elapsed + "'" : "LIVE";
+    // Football-data.org provides 'minute' in the root or 'fixture.status.elapsed'
+    const minuteVal = match.minute || status.elapsed;
+    const minuteDisplay = (minuteVal && minuteVal !== "undefined") ? minuteVal + "'" : "LIVE";
     scoreSection = `
       <div class="match-score-section">
         <div class="match-score live-score">${homeScore} - ${awayScore}</div>
@@ -1425,8 +1428,8 @@ function renderInterstitialOverlay() {
 // ============================================
 function initApp() {
   if (STATE._appStarted) {
-    // Already started, just refresh data
-    fetchMatches();
+      // Fetch matches for the selected date
+      fetchMatches(null);
     return;
   }
   STATE._appStarted = true;
