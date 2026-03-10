@@ -264,48 +264,11 @@
 
     <script src="app_v3.js?v=3.0"></script>
     <script>
-      // DIRECT API INJECTION FOR TOMORROW (Bypassing Firestore if needed)
-      async function forceFetchTomorrowDirect() {
-        console.log("[Force] Direct API Injection Start...");
-        const tomorrowUTC = new Date(Date.now() + 86400000);
-        const y = tomorrowUTC.getUTCFullYear();
-        const m = String(tomorrowUTC.getUTCMonth() + 1).padStart(2, "0");
-        const d = String(tomorrowUTC.getUTCDate()).padStart(2, "0");
-        const dateStr = `${y}-${m}-${d}`;
-        
-        try {
-          const res = await fetch(`https://api.football-data.org/v4/matches?dateFrom=${dateStr}&dateTo=${dateStr}&competitions=PL,PD,BL1,SA,FL1,CL`, {
-            headers: { "X-Auth-Token": "33e62ca975a749858503fdf63b75d9d7" }
-          });
-          const data = await res.json();
-          console.log("[Force] Direct API Data for Tomorrow:", data);
-          
-          if (data.matches && typeof renderMatches === 'function') {
-            const mapped = data.matches.map(m => ({
-              fixture: { id: m.id, status: { short: m.status, elapsed: m.minute || null }, date: m.utcDate },
-              league: { name: m.competition.name, id: m.competition.code, logo: m.competition.emblem },
-              teams: {
-                home: { name: m.homeTeam.shortName || m.homeTeam.name, id: m.homeTeam.id, logo: m.homeTeam.crest },
-                away: { name: m.awayTeam.shortName || m.awayTeam.name, id: m.awayTeam.id, logo: m.awayTeam.crest }
-              },
-              goals: { home: m.score.fullTime.home, away: m.score.fullTime.away },
-              score: m.score,
-              source: "direct-injection"
-            }));
-            STATE.allMatches = mapped;
-            renderMatches(mapped);
-          }
-        } catch(e) { console.error("[Force] Direct API failed:", e); }
-      }
-      
-      // Initialize app immediately with fallback key
+      // Initialize app immediately
       document.addEventListener('DOMContentLoaded', () => {
         if (typeof checkApiKey === 'function') checkApiKey();
         if (typeof initApp === 'function') initApp();
         if (typeof initFirebaseSync === 'function') initFirebaseSync();
-        
-        // Push Direct Sample to Console for proof
-        forceFetchTomorrowDirect();
 
         // ── BUTTON FIX: MANUALLY RETRIGGER IF NEEDED ──────────────────
         document.querySelectorAll('.match-tab').forEach(btn => {
