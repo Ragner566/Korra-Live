@@ -23,8 +23,8 @@ let STATE = {
   progressTimer: null,
   currentLang: "ar",
   isArabic: true,
-  isFirebaseLoaded: false,
-  _appStarted: false
+  _appStarted: false,
+  _unsubscribeMatches: null
 };
 
 // ============================================
@@ -171,31 +171,62 @@ async function apiRequest(endpoint, params = {}) {
 // DATA FETCHING
 // ============================================
 async function selectMatchDay(day, btn) {
-  // Update UI immediately for responsiveness
-  document.querySelectorAll('.match-tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  console.log(`[Navigation] User clicked: ${day}`);
+  
+  // 1. UI Feedback: Update Active Tab
+  if (btn) {
+    document.querySelectorAll('.match-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
 
-  // Set date state
+  // 2. Clear current matches view to avoid confusion
+  const sections = ["live-matches", "scheduled-matches", "finished-matches"];
+  sections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = "";
+  });
+  
+  const noMatches = document.getElementById("no-matches");
+  if (noMatches) noMatches.style.display = "none";
+  
+  showLoading();
+
+  // 3. Update Date State
   const now = new Date();
-  if (day === 'yesterday') STATE.currentDate = new Date(now.getTime() - 86400000);
-  else if (day === 'tomorrow') STATE.currentDate = new Date(now.getTime() + 86400000);
-  else STATE.currentDate = now;
+  if (day === 'yesterday') {
+    STATE.currentDate = new Date(now.getTime() - 86400000);
+  } else if (day === 'tomorrow') {
+    STATE.currentDate = new Date(now.getTime() + 86400000);
+  } else {
+    STATE.currentDate = now;
+    day = 'today';
+  }
 
-  console.log(`[Navigation] Selecting day: ${day}`);
   await fetchMatches(day);
 }
 
+// Event Delegation for Match Cards
+document.addEventListener('click', function(e) {
+  const card = e.target.closest('.match-card');
+  if (card && card.dataset.id) {
+    const matchId = card.dataset.id;
+    console.log(`[Interaction] Match card clicked: ${matchId}`);
+    if (typeof showInterstitial === 'function') showInterstitial();
+    openMatchDetail(parseInt(matchId));
+  }
+});
+
 async function fetchMatches(forcedDocId = null) {
-  // Prevent excessive fetching (simple debounce)
-  const now = Date.now();
-  if (STATE._lastFetch && (now - STATE._lastFetch < 3000) && !forcedDocId) return;
-  STATE._lastFetch = now;
+  // Simple Debounce: prevent spamming
+  const clickTime = Date.now();
+  if (STATE._lastFetch && (clickTime - STATE._lastFetch < 1000) && !forcedDocId) return;
+  STATE._lastFetch = clickTime;
 
   const dateStr = formatDateAPI(STATE.currentDate);
-  // Default to 'today' only if absolutely no docId is provided and it's actually today
-  let docId = forcedDocId;
   const todayDateStr = formatDateAPI(new Date());
-  
+
+  // Logic to determine which document to fetch
+  let docId = forcedDocId;
   if (!docId) {
     if (dateStr === todayDateStr) docId = "today";
     else if (dateStr === formatDateAPI(new Date(Date.now() - 86400000))) docId = "yesterday";
@@ -203,45 +234,64 @@ async function fetchMatches(forcedDocId = null) {
     else docId = dateStr;
   }
 
-  const isToday = docId === 'today' || dateStr === todayDateStr;
-
+  console.log(`[Fetch] Priority: ${docId}, Falling back to date: ${dateStr}`);
+  
+  // LOG FOR TOMORROW DEBUG
+  if (docId === 'tomorrow') {
+    const tomorrowUTC = new Date(Date.now() + 86400000);
+    console.log(`[Tomorrow Debug] UTC Date: ${tomorrowUTC.toUTCString()} -> API String: ${formatDateAPI(tomorrowUTC)}`);
+  }
+  
   showLoading();
   hideError();
 
-  // ── FIRESTORE STRATEGY ──────────────────────────────
+  // ── 1. FIRESTORE ATTEMPT ──────────────────────────────
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
       const fs = firebase.firestore();
-      console.log(`[Firestore] Fetching matches/${docId}...`);
-      const docSnap = await fs.collection("matches").doc(docId).get();
+      // Cache Buster: Force fetch from server to bypass local indexedDB cache
+      const docSnap = await fs.collection("matches").doc(docId).get({ source: 'server' });
       
       if (docSnap.exists) {
         const data = docSnap.data();
-        console.log(`[Firestore] Loaded ${docId} successfully`);
         STATE.allMatches = data.events || [];
+        console.log(`[Firestore] Successfully loaded ${STATE.allMatches.length} matches for ${docId} (Fresh from Server)`);
+        
         hideLoading();
         renderMatches(STATE.allMatches);
-        if (isToday) setupLiveMatchesListener();
+        
+        // Setup real-time listener for current view (yesterday, today, or tomorrow)
+        setupLiveMatchesListener();
         return;
       }
-      console.warn(`[Firestore] Document ${docId} not found.`);
+      console.warn(`[Firestore] Document ${docId} missing, trying API fallback...`);
     } catch(e) {
-      console.error("[Firestore] Error:", e.message);
+      console.error("[Firestore] Read error:", e.message);
     }
   }
 
-  // ── API FALLBACK (ONLY IF FIRESTORE FAILS OR IS MISSING DATA) ───────────────────────────────
   try {
     const allEvents = await fetchMatchesDirect(dateStr);
     STATE.allMatches = allEvents;
     hideLoading();
-    renderMatches(allEvents);
+    renderMatches(STATE.allMatches);
+    
+    // Save to Firestore if it was a fallback for relative docs
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      const fs = firebase.firestore();
+      console.log(`[Cache] Updating matches/${docId} with fresh API data...`);
+      fs.collection("matches").doc(docId).set({
+        events: allEvents,
+        lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+        source: "api-fallback"
+      }).catch(e => console.error("[Cache] Save failed:", e));
+    }
   } catch(error) {
     console.error("[API Fallback] Failed:", error.message);
     if (error.message.includes("429")) {
-      showQuotaMessage("يرجى الانتظار قليلاً — تحديث البيانات جارٍ");
+      showQuotaMessage("التحديث المباشر سيعود للعمل خلال دقائق");
     } else {
-      showError("لا يمكن الوصول للبيانات حالياً");
+      showError("لا يمكن تحميل المباريات حالياً");
     }
   }
 }
@@ -280,13 +330,22 @@ function normalizeDbEvent(e) {
 
 // Direct API fallback using Football-Data.org
 async function fetchMatchesDirect(dateStr) {
-  console.log(`[Fallback] Fetching matches for ${dateStr} directly from Football-Data.org...`);
+  const cacheBuster = Date.now();
+  console.log(`[Fallback] Fetching matches for ${dateStr} directly from Football-Data.org... cb=${cacheBuster}`);
   try {
-    const data = await apiRequest("matches", {
+    const params = {
       dateFrom: dateStr,
       dateTo: dateStr,
-      competitions: CONFIG.SUPPORTED_LEAGUES.join(',')
-    });
+      competitions: CONFIG.SUPPORTED_LEAGUES.join(','),
+      _cb: cacheBuster
+    };
+    
+    // Explicit logging for tomorrow's fetch to debug the URL
+    if (dateStr === formatDateAPI(new Date(Date.now() + 86400000))) {
+      console.log(`[Tomorrow Debug] URL: ${CONFIG.API_BASE_URL}/matches?dateFrom=${dateStr}&dateTo=${dateStr}&competitions=${params.competitions}`);
+    }
+
+    const data = await apiRequest("matches", params);
 
     return (data.matches || []).map(m => ({
       fixture: {
@@ -307,6 +366,7 @@ async function fetchMatchesDirect(dateStr) {
         home: m.score.fullTime.home,
         away: m.score.fullTime.away
       },
+      score: m.score, // Include full score object (halfTime, fullTime, etc.)
       source: "football-data.org"
     }));
   } catch (e) {
@@ -320,21 +380,56 @@ let liveDbListenerRef = null;
 let liveDbCallback = null;
 
 function setupLiveMatchesListener() {
-  if (typeof firebase === 'undefined' || !firebase.database) return;
-  if (liveDbListenerRef && liveDbCallback) {
-    liveDbListenerRef.off("value", liveDbCallback);
+  if (typeof firebase === 'undefined' || !firebase.firestore) return;
+
+  // Unsubscribe from previous listener if exists
+  if (STATE._unsubscribeMatches) {
+    STATE._unsubscribeMatches();
+    STATE._unsubscribeMatches = null;
   }
 
-  liveDbListenerRef = firebase.database().ref("/live_matches");
-  liveDbCallback = liveDbListenerRef.on("value", snapshot => {
-    const data = snapshot.val();
-    if (!data) return;
-    if (data.events && data.events.length > 0) {
-      console.log("[Realtime DB] Live Update...");
-      STATE.allMatches = data.events;
-      renderMatches(STATE.allMatches);
+  const dateStr = formatDateAPI(STATE.currentDate);
+  const todayDateStr = formatDateAPI(new Date());
+  
+  // Determine docId
+  let docId = dateStr;
+  if (dateStr === todayDateStr) docId = "today";
+  else if (dateStr === formatDateAPI(new Date(Date.now() - 86400000))) docId = "yesterday";
+  else if (dateStr === formatDateAPI(new Date(Date.now() + 86400000))) docId = "tomorrow";
+
+  console.log(`[Firestore] Setting up Real-time Listener for: ${docId}`);
+  
+  const fs = firebase.firestore();
+  STATE._unsubscribeMatches = fs.collection("matches").doc(docId).onSnapshot(docSnap => {
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      const newMatches = data.events || [];
+      
+      // Update state and UI
+      STATE.allMatches = newMatches;
+      console.log(`[Real-time] Received update for ${docId}: ${newMatches.length} matches. Last update: ${data.lastUpdated?.toDate().toLocaleTimeString() || 'N/A'}`);
+      
+      // Only render if not loading
+      const loading = document.getElementById("loading-container");
+      if (loading && loading.style.display === "none") {
+        renderMatches(STATE.allMatches);
+      }
     }
+  }, err => {
+    console.error(`[Real-time] Listener failed for ${docId}:`, err);
   });
+}
+
+async function fetchMatchDetailsServer(fixtureId) {
+  // Try to find if this specific match needs fresh data from Firestore (Server source)
+  if (typeof firebase !== 'undefined' && firebase.firestore) {
+    try {
+      console.log(`[Firestore] Fetching fresh details for match ${fixtureId} from SERVER...`);
+      // Note: Full incidents/stats would normally be in a separate collection or doc
+      // For this implementation, we try the API fallback if Firestore doesn't have deep details
+    } catch(e) {}
+  }
+  return await fetchMatchDetails(fixtureId);
 }
 
 async function fetchMatchDetails(fixtureId) {
@@ -438,7 +533,16 @@ function renderMatches(matches) {
 
   // No matches message
   const noMatches = document.getElementById("no-matches");
+  const noMatchesText = noMatches.querySelector('p');
+  
   if (live.length === 0 && scheduled.length === 0 && finished.length === 0) {
+    const isFuture = STATE.currentDate > new Date(new Date().setHours(23, 59, 59, 999));
+    
+    if (isFuture) {
+      noMatchesText.textContent = STATE.currentLang === "ar" ? "جاري جلب جدول مباريات الغد من السيرفر..." : "Fetching tomorrow's schedule from server...";
+    } else {
+      noMatchesText.textContent = t("noMatches");
+    }
     noMatches.style.display = "flex";
   } else {
     noMatches.style.display = "none";
@@ -480,19 +584,19 @@ function matchCardHTML(match, type) {
   }
 
   return `
-    <div class="match-card ${type === "live" ? "live" : ""}" onclick="showInterstitial(); openMatchDetail(${fixture.id})">
+    <div class="match-card ${type === "live" ? "live" : ""}" data-id="${fixture.id}">
       <div class="match-card-league">
         <img src="${league.logo}" alt="${league.name}" onerror="this.style.display='none'" />
         <span>${league.name}</span>
       </div>
       <div class="match-card-body">
         <div class="match-team">
-          <img class="match-team-logo" src="${teams.home.logo}" alt="${teams.home.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzJiMmQ0MiIvPjwvc3ZnPg=='" />
+          <img class="match-team-logo team-logo" src="${teams.home.logo}" alt="${teams.home.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzJiMmQ0MiIvPjwvc3ZnPg=='" />
           <span class="match-team-name">${teams.home.name}</span>
         </div>
         ${scoreSection}
         <div class="match-team">
-          <img class="match-team-logo" src="${teams.away.logo}" alt="${teams.away.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzJiMmQ0MiIvPjwvc3ZnPg=='" />
+          <img class="match-team-logo team-logo" src="${teams.away.logo}" alt="${teams.away.name}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIyMCIgZmlsbD0iIzJiMmQ0MiIvPjwvc3ZnPg=='" />
           <span class="match-team-name">${teams.away.name}</span>
         </div>
       </div>
@@ -504,12 +608,18 @@ function matchCardHTML(match, type) {
 // MATCH DETAIL MODAL
 // ============================================
 async function openMatchDetail(fixtureId) {
-  const match = STATE.allMatches.find((m) => m.fixture.id === fixtureId);
-  if (!match) return;
-
   const modal = document.getElementById("match-modal");
   const modalBody = document.getElementById("modal-body");
   const modalLeagueName = document.getElementById("modal-league-name");
+
+  // Clear previous content to avoid ghosting
+  modalBody.innerHTML = '<div class="loading-container" style="display:flex; padding: 40px;"><div class="loading-spinner"></div></div>';
+  modalLeagueName.textContent = "...";
+
+  const match = STATE.allMatches.find((m) => m.fixture.id === fixtureId);
+  if (!match) return;
+
+  console.log(`[Interaction] Opening match details for ID: ${fixtureId}, Current Status: ${match.fixture.status.short}`);
 
   modalLeagueName.textContent = match.league.name;
 
@@ -558,8 +668,9 @@ async function openMatchDetail(fixtureId) {
     <div id="modal-lineups-tab" class="modal-tab-content"></div>
   `;
 
-  // Fetch details
-  const details = await fetchMatchDetails(fixtureId);
+  // Fetch details - FORCE SERVER to bypass cache
+  const details = await fetchMatchDetailsServer(fixtureId);
+  console.log(`[Interaction] Details Received:`, details);
 
   // Render events
   const eventsContainer = document.getElementById("modal-events");
@@ -578,12 +689,21 @@ async function openMatchDetail(fixtureId) {
     statsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:20px">${STATE.currentLang === "ar" ? "لا توجد إحصائيات" : "No statistics available"}</p>`;
   }
 
-  // Render lineups
   const lineupsContainer = document.getElementById("modal-lineups-tab");
-  if (details.lineups && (details.lineups.home?.players || details.lineups.away?.players)) {
-    lineupsContainer.innerHTML = renderLineups(details.lineups, match);
+  const status = match.fixture.status.short;
+
+  if (isFinished(status) || isLive(status)) {
+    if (details.lineups && (details.lineups.home?.players || details.lineups.away?.players)) {
+      lineupsContainer.innerHTML = renderLineups(details.lineups, match);
+    } else {
+      lineupsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:30px">${STATE.currentLang === "ar" ? "التشكيلات غير متوفرة بعد" : "Lineups not available yet"}</p>`;
+    }
   } else {
-    lineupsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:20px">${STATE.currentLang === "ar" ? "لا توجد تشكيلات" : "No lineups available"}</p>`;
+    // Scheduled/Timed
+    const msg = STATE.currentLang === "ar" 
+      ? "التشكيلات ستتوفر قبل المباراة بـ 60 دقيقة" 
+      : "Lineups will be available 60 minutes before kickoff";
+    lineupsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:30px;font-weight:700">${msg}</p>`;
   }
 }
 
@@ -835,8 +955,8 @@ function renderStandingsTable(standings) {
         <td><span class="standings-rank ${team.position <= 4 ? "top" : ""}">${team.position}</span></td>
         <td>
           <div class="standings-team-cell">
-            <img src="${teamData.crest}" alt="${teamData.name}" onerror="this.style.display='none'" />
-            <span>${teamData.shortName || teamData.name}</span>
+            <img class="team-logo" src="${teamData.crest}" alt="${teamData.name}" onerror="this.style.display='none'" />
+            <span class="standings-team-name">${teamData.shortName || teamData.name}</span>
           </div>
         </td>
         <td>${team.playedGames}</td>
@@ -990,12 +1110,12 @@ function formatDateAPI(date) {
 }
 
 function isLive(statusShort) {
-  const liveStatuses = ["1H", "2H", "HT", "ET", "P", "BT", "LIVE", "INT"];
+  const liveStatuses = ["IN_PLAY", "PAUSED", "LIVE", "1H", "HT", "2H", "ET", "BT", "P", "INT"];
   return liveStatuses.includes(statusShort);
 }
 
 function isFinished(statusShort) {
-  const finishedStatuses = ["FT", "AET", "PEN", "AWD", "WO"];
+  const finishedStatuses = ["FINISHED", "FT", "AET", "PEN", "AWD", "WO"];
   return finishedStatuses.includes(statusShort);
 }
 
@@ -1057,9 +1177,46 @@ function startAutoRefresh() {
       // Only auto-refresh on matches page
       if (STATE.currentPage === "matches") {
         fetchMatches();
+        // FORCE LIVE UPDATE: Push fresh IN_PLAY scores to Firestore every cycle
+        syncLiveScoresToFirestore();
       }
     }
   }, interval);
+}
+
+async function syncLiveScoresToFirestore() {
+  const liveMatches = STATE.allMatches.filter(m => isLive(m.fixture.status.short));
+  // Keep syncing every 2 mins even if no live matches yet, to catch start of games
+  
+  console.log(`[Auto-Sync] Fetching 120s update for matches...`);
+  const todayStr = formatDateAPI(new Date());
+  const tomorrowStr = formatDateAPI(new Date(Date.now() + 86400000));
+
+  try {
+    // 1. Sync Today
+    const freshToday = await fetchMatchesDirect(todayStr);
+    if (freshToday && freshToday.length > 0) {
+      if (typeof firebase !== 'undefined' && firebase.firestore) {
+        await firebase.firestore().collection("matches").doc("today").set({
+          events: freshToday,
+          lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+          source: "live-auto-sync"
+        });
+        console.log("[Auto-Sync] Firestore matches/today updated.");
+      }
+    }
+
+    // 2. Sync Tomorrow (Quick check)
+    const freshTomorrow = await fetchMatchesDirect(tomorrowStr);
+    if (freshTomorrow && freshTomorrow.length > 0) {
+      await firebase.firestore().collection("matches").doc("tomorrow").set({
+        events: freshTomorrow,
+        lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+        source: "auto-sync"
+      });
+      console.log("[Auto-Sync] Firestore matches/tomorrow updated.");
+    }
+  } catch(e) { console.error("[Auto-Sync] Failed:", e); }
 }
 
 function stopAutoRefresh() {

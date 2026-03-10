@@ -245,71 +245,40 @@ async function fetchMatches(forcedDocId = null) {
     else docId = dateStr;
   }
 
-  console.log(`[Fetch] Priority: ${docId}, Falling back to date: ${dateStr}`);
-  
-  // LOG FOR TOMORROW DEBUG
-  if (docId === 'tomorrow') {
-    const tomorrowUTC = new Date(Date.now() + 86400000);
-    console.log(`[Tomorrow Debug] UTC Date: ${tomorrowUTC.toUTCString()} -> API String: ${formatDateAPI(tomorrowUTC)}`);
-  }
+  console.log(`[Fetch] Priority: ${docId}, Date: ${dateStr}`);
   
   showLoading();
   hideError();
 
-  // ── 1. FIRESTORE ATTEMPT ──────────────────────────────
+  // ── 1. FIRESTORE ONLY (Server backend runs independently) ──────────────────────────────
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
       const fs = firebase.firestore();
-      // Cache Buster: Force fetch from server to bypass local indexedDB cache
-      const docSnap = await fs.collection("matches").doc(docId).get({ source: 'server' });
+      const docSnap = await fs.collection("matches").doc(docId).get();
       
       if (docSnap.exists) {
         const data = docSnap.data();
         STATE.allMatches = data.events || [];
-        console.log(`[Firestore] Successfully loaded ${STATE.allMatches.length} matches for ${docId} (Fresh from Server)`);
-        
-        hideLoading();
-        renderMatches(STATE.allMatches);
-        
-        // Setup real-time listener for current view (yesterday, today, or tomorrow)
-        setupLiveMatchesListener();
-        return;
-      } else if (docId === 'tomorrow') {
-        console.log("[Tomorrow] Firestore empty, triggering direct injection fallback...");
-        if (typeof forceFetchTomorrowDirect === 'function') {
-           await forceFetchTomorrowDirect();
-           return;
-        }
+        console.log(`[Firestore] Successfully loaded ${STATE.allMatches.length} matches for ${docId}`);
+      } else {
+        console.warn(`[Firestore] Document ${docId} missing, using empty list.`);
+        STATE.allMatches = [];
       }
-      console.warn(`[Firestore] Document ${docId} missing, trying API fallback...`);
+      
+      hideLoading();
+      renderMatches(STATE.allMatches);
+      
+      // Setup real-time listener for current view
+      setupLiveMatchesListener();
+      return;
     } catch(e) {
       console.error("[Firestore] Read error:", e.message);
+      showError("تعذر تحميل البيانات من قاعدة البيانات.");
+      return;
     }
-  }
-
-  try {
-    const allEvents = await fetchMatchesDirect(dateStr);
-    STATE.allMatches = allEvents;
-    hideLoading();
-    renderMatches(STATE.allMatches);
-    
-    // Save to Firestore if it was a fallback for relative docs
-    if (typeof firebase !== 'undefined' && firebase.firestore) {
-      const fs = firebase.firestore();
-      console.log(`[Cache] Updating matches/${docId} with fresh API data...`);
-      fs.collection("matches").doc(docId).set({
-        events: allEvents,
-        lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
-        source: "api-fallback"
-      }).catch(e => console.error("[Cache] Save failed:", e));
-    }
-  } catch(error) {
-    console.error("[API Fallback] Failed:", error.message);
-    if (error.message.includes("429")) {
-      showQuotaMessage("التحديث المباشر سيعود للعمل خلال دقائق");
-    } else {
-      showError("لا يمكن تحميل المباريات حالياً");
-    }
+  } else {
+    showError("قاعدة البيانات غير متصلة.");
+    return;
   }
 }
 
@@ -696,41 +665,58 @@ async function openMatchDetail(fixtureId) {
   const details = await fetchMatchDetailsServer(fixtureId);
   console.log(`[Interaction] Details Received:`, details);
 
-  // Render events
   const eventsContainer = document.getElementById("modal-events");
-  if (details.events && details.events.length > 0) {
-    eventsContainer.innerHTML = renderEvents(details.events);
+  const statsContainer = document.getElementById("modal-statistics");
+  const lineupsContainer = document.getElementById("modal-lineups-tab");
+  const status = match.fixture.status.short;
+
+  const isStarted = isFinished(status) || isLive(status);
+
+  // Render events
+  if (isStarted) {
+    if (details.events && details.events.length > 0) {
+      eventsContainer.innerHTML = renderEvents(details.events);
+    } else {
+      eventsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:20px">${STATE.currentLang === "ar" ? "لا توجد أحداث" : "No events yet"}</p>`;
+    }
   } else {
-    eventsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:20px">${STATE.currentLang === "ar" ? "لا توجد أحداث" : "No events yet"}</p>`;
+    eventsContainer.innerHTML = `<div style="text-align:center; padding:20px;"><p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "أحداث المباراة لم تبدأ" : "Match events have not started"}</p></div>`;
   }
 
   // Render statistics with fallback logic
-  const statsContainer = document.getElementById("modal-statistics");
-  if (details.statistics && details.statistics.length > 0) {
-    const stats = parseStats(details.statistics);
-    statsContainer.innerHTML = renderStats(stats);
-  } else {
-    // Enhanced stats-missing display
-    const goalsList = details.events?.filter(ev => ev.incidentType === "goal") || [];
-    let goalsInfo = "";
-    if (goalsList.length > 0) {
-      goalsInfo = `<div style="margin-bottom:15px; background:rgba(255,255,255,0.05); padding:10px; border-radius:10px;">
-        <h4 style="margin-bottom:8px; color:var(--accent);">${STATE.currentLang === "ar" ? "مسجلي الأهداف" : "Scorers"}</h4>
-        ${renderEvents(goalsList)}
-      </div>`;
-    }
+  if (isStarted) {
+    if (details.statistics && details.statistics.length > 0) {
+      const stats = parseStats(details.statistics);
+      statsContainer.innerHTML = renderStats(stats);
+    } else {
+      // Enhanced stats-missing display
+      const goalsList = details.events?.filter(ev => ev.incidentType === "goal") || [];
+      let goalsInfo = "";
+      if (goalsList.length > 0) {
+        goalsInfo = `<div style="margin-bottom:15px; background:rgba(255,255,255,0.05); padding:10px; border-radius:10px;">
+          <h4 style="margin-bottom:8px; color:var(--accent);">${STATE.currentLang === "ar" ? "مسجلي الأهداف" : "Scorers"}</h4>
+          ${renderEvents(goalsList)}
+        </div>`;
+      }
 
+      statsContainer.innerHTML = `
+        <div style="text-align:center; padding:20px;">
+          ${goalsInfo}
+          <i class="fas fa-info-circle fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
+          <p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "الإحصائيات التفصيلية غير متوفرة لهذا الدوري" : "Detailed statistics not available for this league"}</p>
+        </div>
+      `;
+    }
+  } else {
     statsContainer.innerHTML = `
       <div style="text-align:center; padding:20px;">
-        ${goalsInfo}
-        <i class="fas fa-info-circle fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
-        <p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "الإحصائيات التفصيلية غير متوفرة لهذا الدوري" : "Detailed statistics not available for this league"}</p>
+        <i class="fas fa-chart-bar fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
+        <p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "الإحصائيات ستكون متاحة أثناء وبعد المباراة" : "Statistics will be available during and after the match"}</p>
       </div>
     `;
   }
 
-  const lineupsContainer = document.getElementById("modal-lineups-tab");
-  const status = match.fixture.status.short;
+  // Set the lineups logic container logic relies on 'status' being available, which was already defined above
 
   if (isFinished(status) || isLive(status)) {
     if (details.lineups && (details.lineups.home?.players || details.lineups.away?.players)) {
@@ -1225,38 +1211,7 @@ function startAutoRefresh() {
 }
 
 async function syncLiveScoresToFirestore() {
-  const liveMatches = STATE.allMatches.filter(m => isLive(m.fixture.status.short));
-  // Keep syncing every 2 mins even if no live matches yet, to catch start of games
-  
-  console.log(`[Auto-Sync] Fetching 120s update for matches...`);
-  const todayStr = formatDateAPI(new Date());
-  const tomorrowStr = formatDateAPI(new Date(Date.now() + 86400000));
-
-  try {
-    // 1. Sync Today
-    const freshToday = await fetchMatchesDirect(todayStr);
-    if (freshToday && freshToday.length > 0) {
-      if (typeof firebase !== 'undefined' && firebase.firestore) {
-        await firebase.firestore().collection("matches").doc("today").set({
-          events: freshToday,
-          lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
-          source: "live-auto-sync"
-        });
-        console.log("[Auto-Sync] Firestore matches/today updated.");
-      }
-    }
-
-    // 2. Sync Tomorrow (Quick check)
-    const freshTomorrow = await fetchMatchesDirect(tomorrowStr);
-    if (freshTomorrow && freshTomorrow.length > 0) {
-      await firebase.firestore().collection("matches").doc("tomorrow").set({
-        events: freshTomorrow,
-        lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
-        source: "auto-sync"
-      });
-      console.log("[Auto-Sync] Firestore matches/tomorrow updated.");
-    }
-  } catch(e) { console.error("[Auto-Sync] Failed:", e); }
+  console.log("[Auto-Sync] Client-side auto-sync is disabled. Server-side GitHub action is handling real-time updates directly to Firestore.");
 }
 
 function stopAutoRefresh() {
