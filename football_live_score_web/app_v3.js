@@ -236,15 +236,10 @@ async function fetchMatches(forcedDocId = null) {
   const dateStr = formatDateAPI(STATE.currentDate);
   const todayDateStr = formatDateAPI(new Date());
 
-  // Logic to determine which document to fetch
-  let docId = forcedDocId;
-  if (!docId) {
-    if (dateStr === todayDateStr) docId = "today";
-    else if (dateStr === formatDateAPI(new Date(Date.now() - 86400000))) docId = "yesterday";
-    else if (dateStr === formatDateAPI(new Date(Date.now() + 86400000))) docId = "tomorrow";
-    else docId = dateStr;
-  }
-
+  // Logic to determine docId: prioritze the date string document (e.g., 2026-03-11)
+  // Our sync script now writes to BOTH 'today' and the date string.
+  let docId = forcedDocId || dateStr;
+  
   console.log(`[Fetch] Priority: ${docId}, Date: ${dateStr}`);
   
   showLoading();
@@ -543,10 +538,12 @@ function matchCardHTML(match, type) {
   let scoreSection = "";
 
   if (type === "live") {
+    // Show elapsed minute if available (e.g., 65')
+    const minuteDisplay = (status.elapsed && status.elapsed !== "undefined") ? status.elapsed + "'" : "LIVE";
     scoreSection = `
       <div class="match-score-section">
         <div class="match-score live-score">${homeScore} - ${awayScore}</div>
-        <div class="match-minute">${status.elapsed != null ? status.elapsed + "'" : "LIVE"}${status.short === "HT" ? " HT" : ""}</div>
+        <div class="match-minute">${minuteDisplay}${status.short === "HT" ? " HT" : ""}</div>
       </div>
     `;
   } else if (type === "scheduled") {
