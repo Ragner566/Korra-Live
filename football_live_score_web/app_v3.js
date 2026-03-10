@@ -525,13 +525,7 @@ function renderMatches(matches) {
   const noMatchesText = noMatches.querySelector('p');
   
   if (live.length === 0 && scheduled.length === 0 && finished.length === 0) {
-    const isFuture = STATE.currentDate > new Date(new Date().setHours(23, 59, 59, 999));
-    
-    if (isFuture) {
-      noMatchesText.textContent = STATE.currentLang === "ar" ? "جاري جلب جدول مباريات الغد من السيرفر..." : "Fetching tomorrow's schedule from server...";
-    } else {
-      noMatchesText.textContent = t("noMatches");
-    }
+    noMatchesText.textContent = t("noMatches");
     noMatches.style.display = "flex";
   } else {
     noMatches.style.display = "none";
