@@ -1285,7 +1285,8 @@ async function initFirebaseSync() {
       if (data.adFrequency) ADS_CONFIG.interstitialFrequency = parseInt(data.adFrequency);
       console.log("Ads settings synced:", ADS_CONFIG);
 
-      document.getElementById("api-key-modal").style.display = "none";
+      const keyModal = document.getElementById("api-key-modal");
+      if (keyModal) keyModal.style.display = "none";
       
       // Firestore Stability Settings
       try {
@@ -1303,7 +1304,8 @@ async function initFirebaseSync() {
     } else {
       console.warn("No settings doc in Firestore. Using fallback key.");
       STATE.apiKey = CONFIG.FALLBACK_API_KEY;
-      document.getElementById("api-key-modal").style.display = "none";
+      const keyModal2 = document.getElementById("api-key-modal");
+      if (keyModal2) keyModal2.style.display = "none";
       if (!STATE.isFirebaseLoaded) {
         STATE.isFirebaseLoaded = true;
         initApp();
@@ -1315,7 +1317,8 @@ async function initFirebaseSync() {
     if (!STATE.isFirebaseLoaded) {
       STATE.isFirebaseLoaded = true;
       STATE.apiKey = CONFIG.FALLBACK_API_KEY;
-      document.getElementById("api-key-modal").style.display = "none";
+      const keyModal3 = document.getElementById("api-key-modal");
+      if (keyModal3) keyModal3.style.display = "none";
       initApp();
     }
   });
