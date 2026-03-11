@@ -385,11 +385,8 @@ function setupLiveMatchesListener() {
   const dateStr = formatDateAPI(STATE.currentDate);
   const todayDateStr = formatDateAPI(new Date());
   
-  // Determine docId
+  // Always use the absolute date string for stability
   let docId = dateStr;
-  if (dateStr === todayDateStr) docId = "today";
-  else if (dateStr === formatDateAPI(new Date(Date.now() - 86400000))) docId = "yesterday";
-  else if (dateStr === formatDateAPI(new Date(Date.now() + 86400000))) docId = "tomorrow";
 
   console.log(`[Firestore] Setting up Real-time Listener for: ${docId}`);
   
