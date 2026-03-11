@@ -55,16 +55,8 @@ async function sync() {
     const matches = res.data.matches || [];
     console.log(`Fetched ${matches.length} matches.`);
 
-    const grouped = {};
-    for (let d = new Date(dateFrom); d <= new Date(dateTo); d.setDate(d.getDate() + 1)) {
-        grouped[dStr(d)] = [];
-    }
-    
-    matches.forEach(m => {
-        const utcDate = m.utcDate.split('T')[0];
-        if (!grouped[utcDate]) grouped[utcDate] = [];
-        
-        grouped[utcDate].push({
+    const mappedTemp = matches.map(m => {
+        return {
             fixture: {
                 id: m.id,
                 status: { short: m.status, elapsed: m.minute || null },
@@ -81,11 +73,55 @@ async function sync() {
                 away: m.score?.fullTime?.away ?? 0
             },
             minute: m.minute || null,
-            // Free Tier note: Events/Stats/Lineups are usually empty
+            // placeholders
             events: m.goals_incidents || [],
             statistics: [],
-            lineups: null
-        });
+            lineups: null,
+            utcDate: m.utcDate
+        };
+    });
+
+
+    // --- Deep Fetch for LIVE Matches ---
+    const liveMatches = matches.filter(m => m.status === 'IN_PLAY' || m.status === 'PAUSED');
+    if (liveMatches.length > 0) {
+        console.log(`Deep Fetching ${liveMatches.length} LIVE matches...`);
+        for (let i = 0; i < liveMatches.length; i++) {
+            const mData = liveMatches[i];
+            try {
+                // Rate limit to stay under 10req/min
+                if (i > 0) await new Promise(r => setTimeout(r, 6500));
+                
+                const detailRes = await axios.get(`${BASE_URL}/matches/${mData.id}`, {
+                    headers: { "X-Auth-Token": FOOTBALL_DATA_TOKEN }
+                });
+                
+                // Map the new deeper info
+                const deeper = detailRes.data;
+                const matchObj = mappedTemp.find(el => el.fixture.id === mData.id);
+                if (matchObj) {
+                    matchObj.fixture.status.elapsed = deeper.minute || matchObj.fixture.status.elapsed;
+                    matchObj.minute = deeper.minute || matchObj.minute;
+                    matchObj.events = deeper.goals_incidents || deeper.events || matchObj.events;
+                    matchObj.statistics = deeper.statistics || [];
+                    matchObj.lineups = deeper.lineups || null;
+                    console.log(`  - Updated deep data for Match ${mData.id} (Min: ${matchObj.minute})`);
+                }
+            } catch(e) {
+                console.warn(`  - Failed deep fetch for ${mData.id} (Rate limit or API issue)`);
+            }
+        }
+    }
+
+    const grouped = {};
+    for (let d = new Date(dateFrom); d <= new Date(dateTo); d.setDate(d.getDate() + 1)) {
+        grouped[dStr(d)] = [];
+    }
+    
+    mappedTemp.forEach(m => {
+        const utcDate = m.utcDate.split('T')[0];
+        if (!grouped[utcDate]) grouped[utcDate] = [];
+        grouped[utcDate].push(m);
     });
 
     const batch = fs.batch();

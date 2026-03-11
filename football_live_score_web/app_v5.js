@@ -655,6 +655,7 @@ async function openMatchDetail(fixtureId) {
       <button class="modal-tab active" onclick="switchModalTab('events', this)">${t("events")}</button>
       <button class="modal-tab" onclick="switchModalTab('statistics', this)">${t("stats")}</button>
       <button class="modal-tab" onclick="switchModalTab('lineups-tab', this)">${t("lineups")}</button>
+      <button class="modal-tab" style="color: #00ffa3;" onclick="switchModalTab('streaming-tab', this)"><i class="fas fa-tv"></i> البث المباشر</button>
     </div>
 
     <div id="modal-events" class="modal-tab-content active">
@@ -662,6 +663,23 @@ async function openMatchDetail(fixtureId) {
     </div>
     <div id="modal-statistics" class="modal-tab-content"></div>
     <div id="modal-lineups-tab" class="modal-tab-content"></div>
+    <div id="modal-streaming-tab" class="modal-tab-content">
+      <div class="streaming-container" style="text-align: center; padding: 20px;">
+        <div class="video-player-placeholder" style="width: 100%; height: 200px; background: #000; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; border: 1px solid var(--border); position: relative; overflow: hidden;">
+          <div style="position: absolute; top:0; left:0; right:0; padding:10px; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent); text-align: left;">
+             <span class="live-dot" style="display:inline-block; margin-right:5px;"></span> <span style="font-size: 12px; font-weight: bold; color:#fff;">LIVE</span>
+          </div>
+          <i class="fas fa-play-circle fa-4x" style="color: var(--accent); opacity: 0.9; cursor: pointer;" onclick="alert('سيتم تفعيل المشغل قريباً')"></i>
+        </div>
+        <h4 style="margin-bottom: 15px; color: var(--text);">اختر جودة البث</h4>
+        <div class="quality-buttons" style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 144p سيتم إضافته لاحقاً')">144p</button>
+          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 360p سيتم إضافته لاحقاً')">360p</button>
+          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 720p سيتم إضافته لاحقاً')">HD 720p</button>
+          <button style="padding: 8px 16px; border-radius: 8px; background: var(--accent); border: none; color: #000; font-weight: bold; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 1080p سيتم إضافته لاحقاً')"><i class="fas fa-crown"></i> 1080p</button>
+        </div>
+      </div>
+    </div>
   `;
 
   // Fetch details - FORCE SERVER to bypass cache
