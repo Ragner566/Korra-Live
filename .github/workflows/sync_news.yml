@@ -1,0 +1,36 @@
+name: News & Sitemap Sync
+
+on:
+  schedule:
+    # Every 2 hours
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync_news:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install Dependencies
+        run: |
+          npm install axios firebase-admin
+
+      - name: Run News Sync
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node sync_news.js
+
+      - name: Commit sitemap.xml if updated
+        run: |
+          git config user.email "bot@korralive.app"
+          git config user.name "Korra Bot"
+          git add football_live_score_web/public/sitemap.xml || true
+          git diff --cached --quiet || git commit -m "auto: update sitemap.xml"
+          git push || true

@@ -3,8 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>كورة لايف - نتائج مباشرة</title>
-    <!-- AdSense Verification -->
+    <title id="page-title">كورة لايف - نتائج مباشرة | مشاهدة مباريات اليوم</title>
+    <!-- SEO Meta -->
+    <meta name="description" id="page-desc" content="تابع نتائج المباريات المباشرة والترتيب والإحصائيات الحية لجميع الدوريات العالمية. مشاهدة مباريات اليوم بث مباشر مجاناً" />
+    <meta name="keywords" content="كورة لايف, بث مباشر, مباريات اليوم, نتائج مباريات, دوري أبطال أوروبا" />
+    <link rel="canonical" href="https://korra-b5d32.web.app/" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+    <!-- Schema.org JSON-LD -->
+    <script type="application/ld+json" id="schema-markup">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "كورة لايف",
+      "url": "https://korra-b5d32.web.app",
+      "description": "نتائج المباريات المباشرة والترتيب والإحصائيات",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://korra-b5d32.web.app/?q={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3630371101145052"
      crossorigin="anonymous"></script>
     <!-- Adsterra Ads -->
@@ -185,18 +205,25 @@
 
       <!-- News Section (for bottom nav) -->
       <section class="section news-page" id="news-page" style="display:none">
-        <h2 class="section-title" data-i18n="news">الأخبار</h2>
-        <div class="news-list" id="news-list">
-          <div class="news-placeholder">
-            <i class="far fa-newspaper"></i>
-            <p data-i18n="newsComingSoon">قسم الأخبار قريبًا</p>
+        <h2 class="section-title" style="padding: 0 16px 12px;"><i class="far fa-newspaper" style="color:var(--accent)"></i> آخر الأخبار الرياضية</h2>
+        <div class="news-grid" id="news-list" style="padding: 0 12px; display:grid; grid-template-columns: 1fr; gap: 14px;">
+          <div style="text-align:center; padding:40px; color:var(--text-secondary);">
+            <div class="loading-spinner" style="margin: 0 auto 15px;"></div>
+            <p>جاري تحميل الأخبار...</p>
           </div>
         </div>
       </section>
 
+      <!-- Replays Section (for bottom nav) -->
+      <section class="section replays-page" id="replays-page" style="display:none">
+        <h2 class="section-title" style="padding: 0 16px 12px;"><i class="fas fa-play-circle" style="color:var(--accent)"></i> إعادة مشاهدة المباريات</h2>
+        <div id="replays-list" style="padding: 0 12px;"></div>
+      </section>
+
       <!-- Footer Version -->
       <footer style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border); margin: 20px 16px;">
-        <p>Kora Live V2 | <span style="color: var(--accent)">V 2.2 - Stable</span></p>
+        <p>Kora Live V9 | <span style="color: var(--accent)">V9.0 — Multi-Source AI Engine</span></p>
+        <p style="margin-top:5px; opacity:0.5;">⚽ Powered by Football-Data.org + ESPN</p>
       </footer>
       
       <!-- Bottom padding -->
@@ -233,6 +260,10 @@
       <a href="#" class="nav-item" data-page="news" onclick="switchPage('news', this, event)">
         <i class="far fa-newspaper"></i>
         <span data-i18n="news">الأخبار</span>
+      </a>
+      <a href="#" class="nav-item" data-page="replays" onclick="switchPage('replays', this, event)">
+        <i class="fas fa-play-circle"></i>
+        <span>الإعادة</span>
       </a>
     </nav>
 

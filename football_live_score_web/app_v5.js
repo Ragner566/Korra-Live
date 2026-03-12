@@ -1074,6 +1074,7 @@ function switchPage(page, el, e) {
   document.getElementById("no-matches").style.display = "none";
   document.getElementById("standings-page").style.display = "none";
   document.getElementById("news-page").style.display = "none";
+  document.getElementById("replays-page").style.display = "none";
   document.getElementById("league-filter-section").style.display = "none";
   document.getElementById("date-section").style.display = "none";
   document.getElementById("loading-container").style.display = "none";
@@ -1083,11 +1084,19 @@ function switchPage(page, el, e) {
     document.getElementById("league-filter-section").style.display = "block";
     document.getElementById("date-section").style.display = "flex";
     renderMatches(STATE.allMatches);
+    updateDynamicSEO("كورة لايف - نتائج مباشرة | مشاهدة مباريات اليوم", "تابع نتائج المباريات المباشرة والترتيب والإحصائيات الحية لجميع الدوريات العالمية. مشاهدة مباريات اليوم بث مباشر مجاناً");
   } else if (page === "standings") {
     document.getElementById("standings-page").style.display = "block";
     loadStandings();
+    updateDynamicSEO("ترتيب الدوريات العالمية | كورة لايف", "جدول ترتيب الدوري الإنجليزي، الإسباني، الألماني، الإيطالي، والفرنسي محدث لحظة بلحظة.");
   } else if (page === "news") {
     document.getElementById("news-page").style.display = "block";
+    loadNews();
+    updateDynamicSEO("آخر الأخبار الرياضية | كورة لايف", "تابع أحدث أخبار كرة القدم العالمية والعربية مترجمة للعربية حصرياً على كورة لايف.");
+  } else if (page === "replays") {
+    document.getElementById("replays-page").style.display = "block";
+    loadReplays();
+    updateDynamicSEO("إعادة مشاهدة المباريات وجدول الأهداف | كورة لايف", "مشاهدة أهداف وإعادة مباريات اليوم وأمس كاملة بجودة عالية HD. مكتبة الأهداف التاريخية.");
   }
 }
 
@@ -1463,11 +1472,13 @@ function renderInterstitialOverlay() {
   overlay.id = 'interstitial-ad';
   overlay.className = 'modal-overlay';
   overlay.style.zIndex = '9999';
+  overlay.style.display = 'flex';
   overlay.innerHTML = `
     <div class="modal-content" style="max-width: 400px; padding: 30px; text-align: center; border-radius: 20px;">
       <div class="ad-badge" style="position:static; display:inline-block; margin-bottom:15px;">ADVERTISEMENT</div>
       <h3 style="margin-bottom:10px;">إعلان ممول</h3>
       <div style="background:#0d1117; height:250px; border-radius:15px; display:flex; align-items:center; justify-content:center; margin-bottom:20px; border: 1px dashed var(--border);">
+         <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-3630371101145052" data-ad-slot="xxx"></ins>
          <i class="fas fa-image fa-3x" style="opacity:0.2"></i>
       </div>
       <button class="btn-primary" onclick="logClick('ad'); this.closest('#interstitial-ad').remove()" style="width:100%; padding:12px; background:var(--accent); border:none; border-radius:10px; font-weight:700; cursor:pointer;">إغلاق الإعلان</button>
@@ -1476,12 +1487,131 @@ function renderInterstitialOverlay() {
   `;
   document.body.appendChild(overlay);
   
-  // Auto close after 10 seconds if user doesn't
   setTimeout(() => {
     if (document.getElementById('interstitial-ad')) {
       document.getElementById('interstitial-ad').remove();
     }
   }, 10000);
+}
+
+// ============================================
+// NEWS ENGINE (V9.0)
+// ============================================
+async function loadNews() {
+  const list = document.getElementById("news-list");
+  if (typeof firebase === 'undefined') return;
+  const db = firebase.firestore();
+  
+  try {
+    const doc = await db.collection("news_index").doc("latest").get();
+    if (doc.exists) {
+      renderNews(doc.data().items || []);
+    } else {
+      list.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:40px">${STATE.currentLang === 'ar' ? 'لا توجد أخبار حالياً' : 'No news available at the moment'}</p>`;
+    }
+  } catch(e) { console.error("News Load Error:", e); }
+}
+
+function renderNews(items) {
+  const list = document.getElementById("news-list");
+  list.innerHTML = items.map(n => `
+    <div class="news-card" onclick="window.open('${n.link}', '_blank')">
+      <div class="news-thumb" style="background-image: url('${n.thumbnail || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=400&q=80'}')"></div>
+      <div class="news-info">
+        <span class="news-source">${n.source} • ${new Date(n.publishedAt).toLocaleDateString(STATE.currentLang === 'ar' ? 'ar-EG' : 'en-US')}</span>
+        <h3 class="news-title">${n.titleAr || n.titleEn}</h3>
+        <p class="news-desc">${n.descAr || n.descEn}...</p>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================
+// REPLAYS ENGINE (V9.0)
+// ============================================
+async function loadReplays() {
+  const list = document.getElementById("replays-list");
+  list.innerHTML = '<div class="loading-spinner" style="margin:40px auto"></div>';
+  
+  if (typeof firebase === 'undefined') return;
+  const db = firebase.firestore();
+  
+  try {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = formatDateAPI(yesterday);
+    
+    const doc = await db.collection("matches").doc(dateStr).get();
+    if (doc.exists) {
+      const matches = (doc.data().events || []).filter(m => isFinished(m.fixture.status.short));
+      renderReplays(matches);
+    } else {
+      list.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:40px">لا توجد مباريات مسجلة لهذا اليوم</p>`;
+    }
+  } catch(e) { console.error("Replays error:", e); }
+}
+
+function renderReplays(matches) {
+  const list = document.getElementById("replays-list");
+  if (matches.length === 0) {
+    list.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:40px">لا توجد مباريات منتهية مسجلة</p>`;
+    return;
+  }
+  
+  list.innerHTML = matches.map(m => `
+    <div class="match-card" onclick="openReplayDetail('${m.fixture.id}')">
+      <div class="match-header">
+         <span class="league-name">${m.league.name}</span>
+         <span class="status-badge replay">REPLAY</span>
+      </div>
+      <div class="match-teams">
+        <div class="team">
+          <img src="${m.teams.home.logo}" alt="${m.teams.home.name}" onerror="this.style.display='none'">
+          <span>${m.teams.home.name}</span>
+        </div>
+        <div class="score">
+          <span class="score-val">${m.goals.home}</span>
+          <span class="score-dash">-</span>
+          <span class="score-val">${m.goals.away}</span>
+        </div>
+        <div class="team">
+          <img src="${m.teams.away.logo}" alt="${m.teams.away.name}" onerror="this.style.display='none'">
+          <span>${m.teams.away.name}</span>
+        </div>
+      </div>
+      <div class="match-footer" style="justify-content:center; padding: 12px 0;">
+         <button class="btn-play-replay"><i class="fas fa-play"></i> مشاهدة الإعادة والأهداف</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openReplayDetail(matchId) {
+  showInterstitial();
+  showMatchDetails(matchId);
+}
+
+// ============================================
+// SEO & VIP (V9.0)
+// ============================================
+function updateDynamicSEO(title, description) {
+  document.title = title;
+  const metaDesc = document.querySelector('meta[name="description"]');
+  if (metaDesc) metaDesc.setAttribute("content", description);
+  
+  const schemaScript = document.getElementById("schema-markup");
+  if (schemaScript) {
+    try {
+      const schema = JSON.parse(schemaScript.innerHTML);
+      schema.description = description;
+      schema.name = title;
+      schemaScript.innerHTML = JSON.stringify(schema, null, 2);
+    } catch(e) {}
+  }
+}
+
+function openVIPDownload() {
+  alert(STATE.currentLang === "ar" ? "🛑 هذه الميزة متاحة للمشتركين VIP فقط. اشترك الآن لتحميل المباريات كاملة بجودة HD!" : "🛑 This feature is available for VIP subscribers only. Join now to download full matches in HD!");
 }
 
 // ============================================
