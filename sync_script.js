@@ -3,21 +3,28 @@ const axios = require('axios');
 const fsMod = require('fs');
 
 // ============================================================
-// CONFIGURATION V7.0
+// SYNC SCRIPT V8.0 — Multi-Source (Football-Data + ESPN)
+// Fixes: expanded competitions, improved fuzzy matching, archiving
 // ============================================================
-const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "ELC"]; 
+
+// Expanded to catch all available free-tier competitions
+const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "ELC", "DED", "PPL", "BSA", "CLI"];
 const FOOTBALL_DATA_TOKEN = process.env.FOOTBALL_DATA_TOKEN || "33e62ca975a749858503fdf63b75d9d7";
 const BASE_URL = "https://api.football-data.org/v4";
-const RATE_LIMIT_DELAY_MS = 6500; 
 
+// ESPN league slug mapping
 const LEAGUE_MAPPING_ESPN = {
-    "PL": "eng.1",
-    "PD": "esp.1",
-    "BL1": "ger.1",
-    "SA": "ita.1",
-    "FL1": "fra.1",
-    "CL": "uefa.champions",
-    "ELC": "eng.2"
+  "PL":  "eng.1",
+  "PD":  "esp.1",
+  "BL1": "ger.1",
+  "SA":  "ita.1",
+  "FL1": "fra.1",
+  "CL":  "uefa.champions",
+  "ELC": "eng.2",
+  "DED": "ned.1",
+  "PPL": "por.1",
+  "BSA": "bra.1",
+  "CLI": "conmebol.libertadores",
 };
 
 let serviceAccount;
@@ -26,189 +33,263 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 } else if (fsMod.existsSync('./football_live_score_web/functions/service-account.json.json')) {
   serviceAccount = require('./football_live_score_web/functions/service-account.json.json');
 } else {
-  console.error("Missing FIREBASE_SERVICE_ACCOUNT.");
+  console.error("❌ Missing FIREBASE_SERVICE_ACCOUNT.");
   process.exit(1);
 }
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: "https://korra-b5d32-default-rtdb.firebaseio.com"
-  });
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
 const db = admin.firestore();
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
-// ============================================
-// FUZZY MATCHING & ESPN DATA FETCHING
-// ============================================
-
-function cleanName(name) {
-    if (!name) return "";
-    return name.toLowerCase()
-        .replace(/fc|cf|afc|real|athletic|united|city|atletico|de|stade|olympique/g, '')
-        .trim()
-        .replace(/\s+/g, '');
+// ─────────────────────────────────────────────────────────────
+// IMPROVED FUZZY NAME MATCHING  
+// ─────────────────────────────────────────────────────────────
+function normName(name) {
+  if (!name) return "";
+  return name.toLowerCase()
+    .replace(/\bfc\b|\bcf\b|\bafc\b|\bsc\b|\bac\b|\bss\b|\bas\b|\bfk\b/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
 }
 
-async function fetchESPNStats(leagueCode, dateStr, matchData) {
-    const espnLeague = LEAGUE_MAPPING_ESPN[leagueCode];
-    if (!espnLeague) return null;
-
-    try {
-        console.log(`  🔍 [ESPN] Searching for stats for ${matchData.homeTeam.name} vs ${matchData.awayTeam.name}...`);
-        const scoreboardUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnLeague}/scoreboard?dates=${dateStr.replace(/-/g, '')}`;
-        const res = await axios.get(scoreboardUrl, { timeout: 8000 });
-        
-        const events = res.data.events || [];
-        const homeClean = cleanName(matchData.homeTeam.name);
-        const awayClean = cleanName(matchData.awayTeam.name);
-
-        const espnMatch = events.find(e => {
-            const hComp = e.competitions[0].competitors.find(c => c.homeAway === 'home');
-            const aComp = e.competitions[0].competitors.find(c => c.homeAway === 'away');
-            const eHome = cleanName(hComp.team.displayName);
-            const eAway = cleanName(aComp.team.displayName);
-            return (eHome.includes(homeClean) || homeClean.includes(eHome)) && 
-                   (eAway.includes(awayClean) || awayClean.includes(eAway));
-        });
-
-        if (espnMatch) {
-            console.log(`  🎯 [ESPN] Match Found: ID ${espnMatch.id}. Fetching deep details...`);
-            const summaryUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnLeague}/summary?event=${espnMatch.id}`;
-            const summaryRes = await axios.get(summaryUrl, { timeout: 8000 });
-            const sData = summaryRes.data;
-
-            let stats = [];
-            if (sData.boxscore && sData.boxscore.teams) {
-                const homeStats = sData.boxscore.teams[0];
-                const awayStats = sData.boxscore.teams[1];
-                const statKeys = ['possessionPct', 'shotsSummary', 'shotsOnTarget', 'foulsCommitted', 'wonCorners'];
-                stats = statKeys.map(k => {
-                    const hVal = homeStats.statistics?.find(s => s.name === k);
-                    const aVal = awayStats.statistics?.find(s => s.name === k);
-                    if (!hVal && !aVal) return null;
-                    return { name: hVal?.label || k, home: hVal?.displayValue || "0", away: aVal?.displayValue || "0" };
-                }).filter(s => s !== null);
-            }
-
-            let lineups = null;
-            if (sData.rosters && sData.rosters.length >= 2) {
-                lineups = {
-                    home: {
-                        formation: sData.rosters[0].formation || "N/A",
-                        players: (sData.rosters[0].roster || []).map(r => ({ player: { name: r.athlete.displayName }, pos: r.position.name }))
-                    },
-                    away: {
-                        formation: sData.rosters[1].formation || "N/A",
-                        players: (sData.rosters[1].roster || []).map(r => ({ player: { name: r.athlete.displayName }, pos: r.position.name }))
-                    }
-                };
-            }
-
-            return { stats, lineups, espnId: espnMatch.id };
-        }
-    } catch (e) {
-        console.warn(`  ⚠️  [ESPN] Search failed: ${e.message}`);
+function fuzzyMatch(nameA, nameB) {
+  const a = normName(nameA);
+  const b = normName(nameB);
+  if (!a || !b) return false;
+  // Direct containment
+  if (a.includes(b) || b.includes(a)) return true;
+  // Longest common substring ≥ 4 chars
+  for (let len = Math.min(a.length, b.length); len >= 4; len--) {
+    for (let i = 0; i <= a.length - len; i++) {
+      if (b.includes(a.substring(i, i + len))) return true;
     }
-    return null;
+  }
+  return false;
 }
 
-// ============================================
-// CORE SYNC LOGIC
-// ============================================
+// ─────────────────────────────────────────────────────────────
+// ESPN DATA FETCHER
+// ─────────────────────────────────────────────────────────────
+async function fetchESPNMatchDeep(espnLeague, espnMatchId) {
+  try {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnLeague}/summary?event=${espnMatchId}`;
+    const res = await axios.get(url, { timeout: 8000 });
+    const sData = res.data;
 
-function mapMatch(m, deep = null, espnData = null) {
-  const d = deep || {};
-  const e = espnData || {};
-  
-  let events = [];
-  const rawGoals = d.goals || m.goals_incidents || [];
-  const rawBookings = d.bookings || [];
-  rawGoals.forEach(g => {
+    // Stats
+    let stats = [];
+    if (sData.boxscore && sData.boxscore.teams && sData.boxscore.teams.length >= 2) {
+      const homeStatsArr = sData.boxscore.teams[0].statistics || [];
+      const awayStatsArr = sData.boxscore.teams[1].statistics || [];
+      const wantedKeys = ['possessionPct', 'shotsSummary', 'shotsOnTarget', 'foulsCommitted', 'wonCorners', 'offsides', 'saves'];
+      wantedKeys.forEach(k => {
+        const h = homeStatsArr.find(s => s.name === k);
+        const a = awayStatsArr.find(s => s.name === k);
+        if (h || a) {
+          stats.push({ name: h?.label || k, home: h?.displayValue || "0", away: a?.displayValue || "0" });
+        }
+      });
+    }
+
+    // Lineups from rosters
+    let lineups = null;
+    if (sData.rosters && sData.rosters.length >= 2) {
+      const mapRoster = (r) => ({
+        formation: r.formation || "N/A",
+        players: (r.roster || []).filter(p => p.starter).map(p => ({
+          player: { name: p.athlete?.displayName || "" },
+          pos: p.position?.abbreviation || ""
+        })),
+        bench: (r.roster || []).filter(p => !p.starter).slice(0, 9).map(p => ({
+          player: { name: p.athlete?.displayName || "" },
+          pos: p.position?.abbreviation || ""
+        }))
+      });
+      lineups = { home: mapRoster(sData.rosters[0]), away: mapRoster(sData.rosters[1]) };
+    }
+
+    return { stats, lineups, espnId: espnMatchId };
+  } catch(e) {
+    console.warn(`    ⚠️  ESPN deep fetch failed for event ${espnMatchId}: ${e.message}`);
+    return null;
+  }
+}
+
+async function fetchESPNStats(leagueCode, dateStr, homeTeamName, awayTeamName) {
+  const espnLeague = LEAGUE_MAPPING_ESPN[leagueCode];
+  if (!espnLeague) return null;
+
+  try {
+    const yyyymmdd = dateStr.replace(/-/g, '');
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnLeague}/scoreboard?dates=${yyyymmdd}`;
+    const res = await axios.get(url, { timeout: 8000 });
+    const events = res.data.events || [];
+
+    let espnMatch = null;
+    for (const e of events) {
+      const comp = e.competitions?.[0];
+      if (!comp) continue;
+      const hComp = comp.competitors?.find(c => c.homeAway === 'home');
+      const aComp = comp.competitors?.find(c => c.homeAway === 'away');
+      const eHome = hComp?.team?.displayName || hComp?.team?.name || "";
+      const eAway = aComp?.team?.displayName || aComp?.team?.name || "";
+      if (fuzzyMatch(homeTeamName, eHome) && fuzzyMatch(awayTeamName, eAway)) {
+        espnMatch = e;
+        break;
+      }
+    }
+
+    if (!espnMatch) return null;
+    console.log(`    🎯 [ESPN] Match: ${espnMatch.name} (ID: ${espnMatch.id})`);
+    return await fetchESPNMatchDeep(espnLeague, espnMatch.id);
+  } catch(e) {
+    console.warn(`    ⚠️  [ESPN] Scoreboard fetch failed for ${leagueCode}/${dateStr}: ${e.message}`);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// MAP MATCH DATA
+// ─────────────────────────────────────────────────────────────
+function mapMatch(m, espnData = null) {
+  const score = m.score || {};
+  const events = [];
+
+  // Goals
+  (m.goals_incidents || []).forEach(g => {
     events.push({ type: 'GOAL', time: g.minute, playerName: g.scorer?.name || '', isHome: g.team?.id === m.homeTeam.id });
   });
-  rawBookings.forEach(b => {
-    events.push({ type: 'CARD', time: b.minute, playerName: b.player?.name || '', isHome: b.team?.id === m.homeTeam.id, cardColor: (b.card === 'RED_CARD') ? 'red' : 'yellow' });
+  // Bookings
+  (m.bookings || []).forEach(b => {
+    events.push({ type: b.card || 'YELLOW_CARD', time: b.minute, playerName: b.player?.name || '', isHome: b.team?.id === m.homeTeam.id, cardColor: b.card === 'RED_CARD' ? 'red' : 'yellow' });
   });
 
   return {
     fixture: {
       id: m.id,
-      status: { short: m.status, elapsed: d.minute || m.minute || null },
-      date: m.utcDate
+      status: { short: m.status, elapsed: m.minute || null },
+      date: m.utcDate,
     },
     teams: {
       home: { name: m.homeTeam.shortName || m.homeTeam.name, id: m.homeTeam.id, logo: m.homeTeam.crest },
       away: { name: m.awayTeam.shortName || m.awayTeam.name, id: m.awayTeam.id, logo: m.awayTeam.crest }
     },
-    score: d.score || m.score,
+    score: { fullTime: score.fullTime || { home: null, away: null } },
+    goals: { home: score.fullTime?.home ?? null, away: score.fullTime?.away ?? null },
     league: { name: m.competition.name, id: m.competition.code, logo: m.competition.emblem },
     events,
-    statistics: e.stats || d.statistics || [],
-    lineups: e.lineups || d.lineups || null,
-    deepFetched: (deep !== null || espnData !== null),
-    streamingLinks: [] 
+    statistics: espnData?.stats || [],
+    lineups: espnData?.lineups || null,
+    deepFetched: !!espnData,
+    streamingLinks: []
   };
 }
 
+// ─────────────────────────────────────────────────────────────
+// MAIN SYNC
+// ─────────────────────────────────────────────────────────────
 async function sync() {
-  console.log(`🚀 [V7.0] SYNC START: ${new Date().toISOString()}`);
+  console.log(`\n🚀 [V8.0] SYNC START: ${new Date().toISOString()}`);
   
   const dStr = (d) => d.toISOString().split('T')[0];
   const now = new Date();
-  const todayStr = dStr(now);
+  const todayStr     = dStr(now);
   const yesterdayStr = dStr(new Date(now.getTime() - 86400000));
-  const tomorrowStr = dStr(new Date(now.getTime() + 86400000));
+  const tomorrowStr  = dStr(new Date(now.getTime() + 86400000));
+
+  // Extend range to ensure we don't miss timezone-shifted matches
+  const dateFrom = dStr(new Date(now.getTime() - 86400000 * 2));
+  const dateTo   = dStr(new Date(now.getTime() + 86400000 * 2));
 
   try {
+    // ── STEP 1: Fetch from Football-Data ──────────────────────
     const res = await axios.get(`${BASE_URL}/matches`, {
       headers: { "X-Auth-Token": FOOTBALL_DATA_TOKEN },
-      params: { dateFrom: yesterdayStr, dateTo: tomorrowStr, competitions: SUPPORTED_COMPETITIONS.join(',') }
+      params: { dateFrom, dateTo } // No competition filter = get everything available
     });
     
     const rawMatches = res.data.matches || [];
-    console.log(`✅ Loaded ${rawMatches.length} matches from Football-Data.`);
-
-    const processedMatches = [];
-
-    for (const m of rawMatches) {
-        let deepResult = null;
-        let espnResult = null;
-        const shouldDeep = ['IN_PLAY', 'PAUSED', 'HALFTIME', 'FINISHED'].includes(m.status);
-
-        if (shouldDeep) {
-            espnResult = await fetchESPNStats(m.competition.code, m.utcDate.split('T')[0], m);
-        }
-        processedMatches.push(mapMatch(m, deepResult, espnResult));
-    }
-
-    const groups = { yesterday: [], today: [], tomorrow: [] };
-    processedMatches.forEach(pm => {
-        const matchDate = pm.fixture.date.split('T')[0];
-        if (matchDate === yesterdayStr) groups.yesterday.push(pm);
-        else if (matchDate === todayStr) groups.today.push(pm);
-        else if (matchDate === tomorrowStr) groups.tomorrow.push(pm);
+    console.log(`✅ Football-Data returned ${rawMatches.length} matches (${dateFrom} → ${dateTo})`);
+    
+    // Group by our classification
+    const byDate = { yesterday: [], today: [], tomorrow: [] };
+    rawMatches.forEach(m => {
+      const d = m.utcDate.split('T')[0];
+      if (d === yesterdayStr) byDate.yesterday.push(m);
+      else if (d === todayStr) byDate.today.push(m);
+      else if (d === tomorrowStr) byDate.tomorrow.push(m);
     });
+    console.log(`  📅 Yesterday: ${byDate.yesterday.length} | Today: ${byDate.today.length} | Tomorrow: ${byDate.tomorrow.length}`);
 
-    const batch = db.batch();
-    for (const [key, events] of Object.entries(groups)) {
-        const payload = { events, lastUpdated: admin.firestore.FieldValue.serverTimestamp(), source: "V7.0_MULTI_SOURCE" };
-        batch.set(db.collection('matches').doc(key), payload);
-        
-        const dateKey = (key === 'today' ? todayStr : (key === 'yesterday' ? yesterdayStr : tomorrowStr));
-        batch.set(db.collection('matches').doc(dateKey), payload);
-        
-        const monthKey = dateKey.substring(0, 7);
-        batch.set(db.collection('archive').doc(monthKey).collection('days').doc(dateKey), { events, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    // ── STEP 2: For finished/live, enrich with ESPN ───────────
+    const processGroup = async (matches, label) => {
+      console.log(`\n  🔄 Processing [${label}] – ${matches.length} matches`);
+      const processed = [];
+      for (const m of matches) {
+        const needsDeep = ['FINISHED', 'IN_PLAY', 'PAUSED', 'HALFTIME'].includes(m.status);
+        let espnData = null;
+        if (needsDeep) {
+          console.log(`  🔍 [ESPN] ${m.homeTeam.name} vs ${m.awayTeam.name}...`);
+          espnData = await fetchESPNStats(
+            m.competition.code,
+            m.utcDate.split('T')[0],
+            m.homeTeam.name,
+            m.awayTeam.name
+          );
+          await delay(300); // small delay to be polite to ESPN
+        }
+        processed.push(mapMatch(m, espnData));
+      }
+      return processed;
+    };
+
+    const [yEvents, tEvents, tmEvents] = await Promise.all([
+      processGroup(byDate.yesterday, "Yesterday"),
+      processGroup(byDate.today,     "Today"),
+      processGroup(byDate.tomorrow,  "Tomorrow")
+    ]);
+
+    // ── STEP 3: Write to Firestore ────────────────────────────
+    const batch1 = db.batch();
+    const ts = admin.firestore.FieldValue.serverTimestamp();
+
+    const setDoc = (key, events, dateStr) => {
+      const payload = { events, lastUpdated: ts, source: "V8.0_AUTO" };
+      batch1.set(db.collection('matches').doc(key), payload);
+      batch1.set(db.collection('matches').doc(dateStr), payload);
+      // Monthly Archive
+      const month = dateStr.substring(0, 7);
+      batch1.set(db.collection('archive').doc(month).collection('days').doc(dateStr), {
+        events, createdAt: ts
+      }, { merge: true });
+    };
+
+    setDoc('yesterday', yEvents, yesterdayStr);
+    setDoc('today',     tEvents, todayStr);
+    setDoc('tomorrow',  tmEvents, tomorrowStr);
+
+    await batch1.commit();
+    console.log(`\n✅ [V8.0] Sync Complete!`);
+    console.log(`   Yesterday: ${yEvents.length} matches | ESPN deep: ${yEvents.filter(e=>e.deepFetched).length}`);
+    console.log(`   Today:     ${tEvents.length} matches | ESPN deep: ${tEvents.filter(e=>e.deepFetched).length}`);
+    console.log(`   Tomorrow:  ${tmEvents.length} matches`);
+
+    // Verify stats on at least 1 match
+    const withStats = [...yEvents, ...tEvents].find(e => e.statistics?.length > 0);
+    if (withStats) {
+      console.log(`\n📊 Sample Stats for: ${withStats.teams.home.name} vs ${withStats.teams.away.name}`);
+      withStats.statistics.slice(0, 3).forEach(s => console.log(`   ${s.name}: ${s.home} - ${s.away}`));
+    } else {
+      console.log(`\n⚠️  No ESPN stats found (matches may not be in ESPN coverage)`);
     }
 
-    await batch.commit();
-    console.log("🔥 [V7.0] Sync Complete. Firestore Updated & Archived.");
-
-  } catch (e) {
-    console.error(`❌ V7.0 Sync Failed: ${e.message}`);
+  } catch(e) {
+    console.error(`❌ Sync Failed: ${e.message}`);
+    if (e.response) console.error(`   HTTP ${e.response.status}:`, JSON.stringify(e.response.data).slice(0, 200));
+    process.exit(1);
   }
   process.exit(0);
 }

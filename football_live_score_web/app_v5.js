@@ -708,27 +708,21 @@ async function openMatchDetail(fixtureId) {
     eventsContainer.innerHTML = `<div style="text-align:center; padding:20px;"><p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "أحداث المباراة لم تبدأ" : "Match events have not started"}</p></div>`;
   }
 
-  // Render statistics with fallback logic
+  // Render statistics — smart multi-format support (ESPN + FD)
   if (isStarted) {
-    if (details.statistics && details.statistics.length > 0) {
-      const stats = parseStats(details.statistics);
-      statsContainer.innerHTML = renderStats(stats);
+    const rawStats = details.statistics;
+    const stats = parseStats(rawStats);
+    if (stats.length > 0) {
+      statsContainer.innerHTML = `
+        <div style="padding:10px 0; font-size:11px; color:var(--text-secondary); text-align:center; margin-bottom:10px;">
+          📊 ${STATE.currentLang === "ar" ? "مصدر الإحصائيات: ESPN" : "Stats source: ESPN"}
+        </div>
+        ${renderStats(stats)}`;
     } else {
-      // Enhanced stats-missing display
-      const goalsList = details.events?.filter(ev => ev.incidentType === "goal") || [];
-      let goalsInfo = "";
-      if (goalsList.length > 0) {
-        goalsInfo = `<div style="margin-bottom:15px; background:rgba(255,255,255,0.05); padding:10px; border-radius:10px;">
-          <h4 style="margin-bottom:8px; color:var(--accent);">${STATE.currentLang === "ar" ? "مسجلي الأهداف" : "Scorers"}</h4>
-          ${renderEvents(goalsList)}
-        </div>`;
-      }
-
       statsContainer.innerHTML = `
         <div style="text-align:center; padding:20px;">
-          ${goalsInfo}
           <i class="fas fa-info-circle fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
-          <p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "الإحصائيات التفصيلية غير متوفرة لهذا الدوري" : "Detailed statistics not available for this league"}</p>
+          <p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "الإحصائيات غير متوفرة (تغطية ESPN غير متوفرة لهذا الدوري)" : "Statistics unavailable (ESPN coverage not found)"}</p>
         </div>
       `;
     }
@@ -736,10 +730,11 @@ async function openMatchDetail(fixtureId) {
     statsContainer.innerHTML = `
       <div style="text-align:center; padding:20px;">
         <i class="fas fa-chart-bar fa-2x" style="opacity:0.3; margin-bottom:10px;"></i>
-        <p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "الإحصائيات ستكون متاحة أثناء وبعد المباراة" : "Statistics will be available during and after the match"}</p>
+        <p style="color:var(--text-secondary);">${STATE.currentLang === "ar" ? "الإحصائيات ستكون متاحة أثناء وبعد المباراة" : "Statistics available during and after the match"}</p>
       </div>
     `;
   }
+
 
   // Set the lineups logic container logic relies on 'status' being available, which was already defined above
 
