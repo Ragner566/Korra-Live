@@ -1473,8 +1473,45 @@ async function logClick(type = "match") {
 }
 
 function initAds() {
-  console.log("Ads System Initialized");
-  // Logic to load AdSense auto-ads if ID exists in Firestore
+  console.log("Ads System Initialized V10");
+  // Check for empty ad spaces and inject app banner
+  setTimeout(() => {
+    const adTop = document.getElementById('ad-top');
+    if (adTop && adTop.innerHTML.includes('native-placeholder')) {
+      adTop.innerHTML = `
+        <div class="app-banner" style="background: linear-gradient(90deg, #00ffa3, #00d4ff); color: #000; padding: 15px; border-radius: 15px; display: flex; align-items: center; justify-content: space-between; width: 100%; cursor: pointer;" onclick="promptInstallPWA()">
+          <div style="display:flex; align-items:center; gap:12px;">
+             <img src="/logo.png" style="width:40px; border-radius:10px; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+             <div>
+                <div style="font-weight:800; font-size:14px;">حمل تطبيق كورة لايف</div>
+                <div style="font-size:11px; opacity:0.8;">لمتابعة المباريات بدون تقطيع</div>
+             </div>
+          </div>
+          <button style="background:#000; color:#fff; border:none; padding:8px 15px; border-radius:8px; font-weight:700; font-size:12px;">تثبيت</button>
+        </div>
+      `;
+    }
+  }, 2000);
+}
+
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+});
+
+function promptInstallPWA() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+      }
+      deferredPrompt = null;
+    });
+  } else {
+    alert(STATE.currentLang === 'ar' ? 'التطبيق مثبت بالفعل أو متصفحك لا يدعم التثبيت التلقائي. استخدم "إضافة إلى الشاشة الرئيسية" من قائمة المتصفح.' : 'App already installed or browser does not support auto-install. Use "Add to Home Screen" from browser menu.');
+  }
 }
 
 function showInterstitial() {
@@ -1621,6 +1658,11 @@ function renderReplays(matches) {
 function openReplayDetail(matchId) {
   showInterstitial();
   showMatchDetails(matchId);
+  // Auto-switch to Replay tab if match is finished
+  setTimeout(() => {
+    const replayTabBtn = document.querySelector('button[onclick*="replays-tab"]');
+    if (replayTabBtn) switchModalTab('replays-tab', replayTabBtn);
+  }, 500);
 }
 
 // ============================================
@@ -1650,18 +1692,34 @@ function openVIPDownload() {
 // INITIALIZATION
 // ============================================
 function initApp() {
-  if (STATE._appStarted) {
-      // Fetch matches for the selected date
-      fetchMatches(null);
-    return;
+  console.log("Korra Live V10 — Full Launch Initializing...");
+  
+  // 1. PWA Service Worker Registration
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').then(reg => {
+        console.log('✅ Korra SW Registered');
+      }).catch(err => console.log('❌ SW Registration failed', err));
+    });
   }
-  STATE._appStarted = true;
+
+  // 2. Language & UI Init
+  if (typeof translateUI === 'function') translateUI();
+  initAds();
+  
+  // 3. Immediate Content Fetch
+  document.getElementById("loading-container").style.display = "flex";
   updateDateDisplay();
+  
+  // Clear any stalls
   fetchMatches();
-  startAutoRefresh();
-  syncLiveScoresToFirestore(); // Initial manual-like sync on startup
-  initAds(); // Start Ads
-  logVisit(); // Track real visitor
+  setupLiveMatchesListener();
+
+  // 4. Analytics & Refresh
+  logVisit();
+  setInterval(() => {
+    if (document.visibilityState === 'visible') fetchMatches();
+  }, 60000);
 }
 
 // DOMContentLoaded fallback - handled from index.html now
