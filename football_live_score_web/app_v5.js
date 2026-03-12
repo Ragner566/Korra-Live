@@ -814,42 +814,17 @@ function renderEvents(incidents) {
 
 function parseStats(statsArray) {
   if (!Array.isArray(statsArray) || statsArray.length === 0) return [];
-  
-  // football-data.org format: [{period:'ALL', groups:[{groupName:'X', statisticsItems:[{name, home, away}]}]}]
-  // Try to find the ALL period, fallback to first
-  const periodData = statsArray.find(s => s.period === 'ALL') || statsArray[0];
-  
-  if (!periodData) return [];
-  
   let flatStats = [];
   
-  if (periodData.groups && Array.isArray(periodData.groups)) {
-    periodData.groups.forEach(group => {
-      if (Array.isArray(group.statisticsItems)) {
-        group.statisticsItems.forEach(item => {
-          flatStats.push({
-            type: item.name || item.key || item.type,
-            home: String(item.home ?? item.homeValue ?? '--'),
-            away: String(item.away ?? item.awayValue ?? '--'),
-          });
-        });
-      }
-    });
-  }
-  
-  // Fallback: some APIs return [{team:{id}, statistics:[{type, value}]}, ...]
-  if (flatStats.length === 0 && statsArray.length === 2 && statsArray[0].statistics) {
-    const homeStats = statsArray[0];
-    const awayStats = statsArray[1];
-    homeStats.statistics.forEach((s, idx) => {
-      const awayStat = awayStats.statistics[idx];
+  statsArray.forEach(item => {
+    if (item.name && item.home !== undefined) {
       flatStats.push({
-        type: s.type,
-        home: String(s.value ?? '--'),
-        away: String(awayStat?.value ?? '--')
+        type: item.name,
+        home: String(item.home),
+        away: String(item.away)
       });
-    });
-  }
+    }
+  });
 
   return flatStats;
 }
