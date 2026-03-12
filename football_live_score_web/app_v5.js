@@ -655,7 +655,8 @@ async function openMatchDetail(fixtureId) {
       <button class="modal-tab active" onclick="switchModalTab('events', this)">${t("events")}</button>
       <button class="modal-tab" onclick="switchModalTab('statistics', this)">${t("stats")}</button>
       <button class="modal-tab" onclick="switchModalTab('lineups-tab', this)">${t("lineups")}</button>
-      ${isLiveMatch ? `<button class="modal-tab" style="color: #00ffa3;" onclick="switchModalTab('streaming-tab', this)"><i class="fas fa-tv"></i> البث المباشر</button>` : ''}
+      ${isLiveMatch ? `<button class="modal-tab" style="color: #00ffa3;" onclick="switchModalTab('streaming-tab', this)"><i class="fas fa-tv"></i> البث المباشر</button>` : 
+        (['FINISHED', 'FT', 'AET', 'PEN'].includes(match.fixture.status.short) ? `<button class="modal-tab" style="color: #00ffa3;" onclick="switchModalTab('replays-tab', this)"><i class="fas fa-play-circle"></i> ملخص المباراة</button>` : '')}
     </div>
 
     <div id="modal-events" class="modal-tab-content active">
@@ -672,16 +673,36 @@ async function openMatchDetail(fixtureId) {
           </div>
           <i class="fas fa-play-circle fa-4x" style="color: var(--accent); opacity: 0.9; cursor: pointer;" onclick="alert('سيتم تفعيل المشغل قريباً')"></i>
         </div>
-        <h4 style="margin-bottom: 15px; color: var(--text);">اختر جودة البث</h4>
+        <h4 style="margin-bottom: 15px; color: var(--accent);">اختر جودة البث المباشر</h4>
         <div class="quality-buttons" style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 144p سيتم إضافته لاحقاً')">144p</button>
-          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 240p سيتم إضافته لاحقاً')">240p</button>
-          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 360p سيتم إضافته لاحقاً')">360p</button>
-          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 480p سيتم إضافته لاحقاً')">480p</button>
-          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 720p سيتم إضافته لاحقاً')">HD 720p</button>
-          <button style="padding: 8px 16px; border-radius: 8px; background: var(--accent); border: none; color: #000; font-weight: bold; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 1080p سيتم إضافته لاحقاً')"><i class="fas fa-crown"></i> 1080p</button>
+          <button class="btn-quality" onclick="alert('رابط الـ 240p سيتم إضافته لاحقاً')">240p</button>
+          <button class="btn-quality" onclick="alert('رابط الـ 480p سيتم إضافته لاحقاً')">480p</button>
+          <button class="btn-quality" onclick="alert('رابط الـ 720p سيتم إضافته لاحقاً')">HD 720p</button>
+          <button class="btn-quality active" onclick="alert('رابط الـ 1080p سيتم إضافته لاحقاً')"><i class="fas fa-crown"></i> 1080p</button>
         </div>
       </div>
+    </div>
+    ` : ''}
+    ${isFinished(status) ? `
+    <div id="modal-replays-tab" class="modal-tab-content">
+       <div style="padding: 20px; text-align: center;">
+         <div class="video-player-placeholder" style="width: 100%; height: 200px; background: #0c111d; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 25px; border: 2px solid var(--accent); position: relative; overflow: hidden; box-shadow: 0 0 20px var(--accent-glow);">
+           <i class="fas fa-play fa-3x" style="color: var(--accent);"></i>
+           <div style="position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 5px; font-size: 11px;">12:45</div>
+         </div>
+         <h3 style="margin-bottom:10px;">مشاهدة ملخص المباراة</h3>
+         <p style="color:var(--text-secondary); font-size:13px; margin-bottom:20px;">الأهداف كاملة واللقطات المثيرة بجودة HD</p>
+         
+         <div style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 15px; border: 1px solid var(--border);">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:15px;">
+               <span style="font-weight:700;">تحميل بصيغة MP4</span>
+               <span class="vip-badge">PREMIUM</span>
+            </div>
+            <button class="btn-play-replay" style="margin:0; width:100%;" onclick="openVIPDownload()">
+              <i class="fas fa-download"></i> تحميل المباراة كاملة (4GB)
+            </button>
+         </div>
+       </div>
     </div>
     ` : ''}
   `;
@@ -1459,11 +1480,20 @@ function initAds() {
 function showInterstitial() {
   if (!ADS_CONFIG.isEnabled) return;
   
-  logClick("match"); // Track actual match click
+  // Frequency Capping: 10 minutes (600,000 ms)
+  const lastAdTime = localStorage.getItem('last_ad_time');
+  const now = Date.now();
+  if (lastAdTime && (now - lastAdTime < 600000)) {
+    console.log("Ad skipped due to frequency capping.");
+    return;
+  }
+
+  logClick("match");
   ADS_CONFIG.matchClickCount++;
   if (ADS_CONFIG.matchClickCount % ADS_CONFIG.interstitialFrequency === 0) {
     console.log("Showing Interstitial Ad...");
     renderInterstitialOverlay();
+    localStorage.setItem('last_ad_time', Date.now());
   }
 }
 
@@ -1514,9 +1544,11 @@ async function loadNews() {
 
 function renderNews(items) {
   const list = document.getElementById("news-list");
+  const fallbackImg = 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=600&q=80';
+  
   list.innerHTML = items.map(n => `
     <div class="news-card" onclick="window.open('${n.link}', '_blank')">
-      <div class="news-thumb" style="background-image: url('${n.thumbnail || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=400&q=80'}')"></div>
+      <div class="news-thumb" style="background-image: url('${n.thumbnail || fallbackImg}')"></div>
       <div class="news-info">
         <span class="news-source">${n.source} • ${new Date(n.publishedAt).toLocaleDateString(STATE.currentLang === 'ar' ? 'ar-EG' : 'en-US')}</span>
         <h3 class="news-title">${n.titleAr || n.titleEn}</h3>
@@ -1580,7 +1612,7 @@ function renderReplays(matches) {
         </div>
       </div>
       <div class="match-footer" style="justify-content:center; padding: 12px 0;">
-         <button class="btn-play-replay"><i class="fas fa-play"></i> مشاهدة الإعادة والأهداف</button>
+         <button class="btn-play-replay" onclick="event.stopPropagation(); openReplayDetail('${m.fixture.id}')"><i class="fas fa-play-circle"></i> مشاهدة الإعادة والأهداف</button>
       </div>
     </div>
   `).join('');
