@@ -655,7 +655,7 @@ async function openMatchDetail(fixtureId) {
       <button class="modal-tab active" onclick="switchModalTab('events', this)">${t("events")}</button>
       <button class="modal-tab" onclick="switchModalTab('statistics', this)">${t("stats")}</button>
       <button class="modal-tab" onclick="switchModalTab('lineups-tab', this)">${t("lineups")}</button>
-      <button class="modal-tab" style="color: #00ffa3;" onclick="switchModalTab('streaming-tab', this)"><i class="fas fa-tv"></i> البث المباشر</button>
+      ${isLiveMatch ? `<button class="modal-tab" style="color: #00ffa3;" onclick="switchModalTab('streaming-tab', this)"><i class="fas fa-tv"></i> البث المباشر</button>` : ''}
     </div>
 
     <div id="modal-events" class="modal-tab-content active">
@@ -663,6 +663,7 @@ async function openMatchDetail(fixtureId) {
     </div>
     <div id="modal-statistics" class="modal-tab-content"></div>
     <div id="modal-lineups-tab" class="modal-tab-content"></div>
+    ${isLiveMatch ? `
     <div id="modal-streaming-tab" class="modal-tab-content">
       <div class="streaming-container" style="text-align: center; padding: 20px;">
         <div class="video-player-placeholder" style="width: 100%; height: 200px; background: #000; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; border: 1px solid var(--border); position: relative; overflow: hidden;">
@@ -674,12 +675,15 @@ async function openMatchDetail(fixtureId) {
         <h4 style="margin-bottom: 15px; color: var(--text);">اختر جودة البث</h4>
         <div class="quality-buttons" style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
           <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 144p سيتم إضافته لاحقاً')">144p</button>
+          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 240p سيتم إضافته لاحقاً')">240p</button>
           <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 360p سيتم إضافته لاحقاً')">360p</button>
+          <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 480p سيتم إضافته لاحقاً')">480p</button>
           <button style="padding: 8px 16px; border-radius: 8px; background: #2b2d42; border: 1px solid var(--border); color: #fff; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 720p سيتم إضافته لاحقاً')">HD 720p</button>
           <button style="padding: 8px 16px; border-radius: 8px; background: var(--accent); border: none; color: #000; font-weight: bold; cursor: pointer; font-family:'Tajawal';" onclick="alert('رابط الـ 1080p سيتم إضافته لاحقاً')"><i class="fas fa-crown"></i> 1080p</button>
         </div>
       </div>
     </div>
+    ` : ''}
   `;
 
   // Fetch details - FORCE SERVER to bypass cache
@@ -755,65 +759,97 @@ async function openMatchDetail(fixtureId) {
 }
 
 function renderEvents(incidents) {
-  let html = '<div class="events-timeline">';
-  if (!Array.isArray(incidents)) return html + '</div>';
+  if (!Array.isArray(incidents) || incidents.length === 0) {
+    return `<p style="text-align:center;color:var(--text-secondary);padding:20px">${STATE.currentLang === 'ar' ? 'لا توجد أحداث مسجلة' : 'No events recorded'}</p>`;
+  }
   
   // Sort by time ascending
-  const sorted = [...incidents].sort((a, b) => (a.time || a.minute || 0) - (b.time || b.minute || 0));
+  const sorted = [...incidents].sort((a, b) => (parseInt(a.time) || 0) - (parseInt(b.time) || 0));
 
+  let html = '<div class="events-timeline">';
   sorted.forEach((ev) => {
-    let iconClass = "goal";
-    let label = "⚽";
-    let detailText = ev.playerName || ev.player?.name || ev.scorer?.name || "Goal";
-    let time = ev.time || ev.minute || "";
+    let label = '⚽';
+    let iconClass = 'goal';
+    let detailText = ev.playerName || ev.player?.name || ev.scorer?.name || '';
+    let time = ev.time || ev.minute || '';
+    let subText = '';
 
-    // Football-Data.org goal structure support
-    if (ev.type && ev.type.includes("GOAL")) {
-        iconClass = "goal";
-        label = "⚽";
-        if (ev.type === "OG") { label = "🥅"; detailText += " (OG)"; }
-        if (ev.type === "PENALTY") { label = "🎯"; detailText += " (P)"; }
-    } else if (ev.incidentType === "card" || ev.type === "CARD") {
-       const isRed = ev.incidentClass === "red" || ev.card === "RED";
-       iconClass = isRed ? "card-red" : "card-yellow";
-       label = isRed ? "🔴" : "🟡";
+    const evType = (ev.type || '').toUpperCase();
+
+    if (evType.includes('GOAL') || evType === 'REGULAR' || evType === 'EXTRA_TIME' || evType === 'PENALTY') {
+      iconClass = 'goal';
+      label = '⚽';
+      if (evType === 'OWN_GOAL' || evType.includes('OWN')) { label = '🥅'; subText = '(OG)'; }
+      if (evType === 'PENALTY') { label = '🎯'; subText = '(P)'; }
+      if (ev.assist) { subText += (subText ? ' ' : '') + `<small style="color:var(--text-secondary);">(${ev.assist})</small>`; }
+    } else if (evType.includes('YELLOW_RED') || evType === 'RED_CARD') {
+      iconClass = 'card-red'; label = '🔴';
+    } else if (evType.includes('YELLOW') || ev.incidentClass === 'yellow') {
+      iconClass = 'card-yellow'; label = '🟡';
+    } else if (evType === 'SUBSTITUTION') {
+      iconClass = 'sub'; label = '🔄';
+      subText = ev.playerOut ? `<small style="color:#ff6b6b;">↑ ${ev.playerIn || ''} ↓ ${ev.playerOut}</small>` : '';
+      detailText = ev.playerIn || detailText;
+    } else if (ev.incidentType === 'card') {
+      const isRed = ev.incidentClass === 'red';
+      iconClass = isRed ? 'card-red' : 'card-yellow';
+      label = isRed ? '🔴' : '🟡';
     }
 
-    // Determine side (simplified for football-data.org if isHome is missing)
-    const alignClass = ev.isHome ? "home-event" : "away-event";
+    const alignClass = ev.isHome ? 'home-event' : 'away-event';
 
     html += `
       <div class="event-item ${alignClass}">
         <div class="event-icon ${iconClass}">${label}</div>
         <div class="event-time">${time}'</div>
         <div class="event-detail">
-          ${detailText}
+          ${detailText} ${subText}
         </div>
       </div>
     `;
   });
-  html += "</div>";
+  html += '</div>';
   return html;
 }
 
 function parseStats(statsArray) {
-  if (!Array.isArray(statsArray)) return [];
-  // Find period="ALL"
-  const allStats = statsArray.find(s => s.period === "ALL" || s.period === "1ST");
-  if (!allStats || !allStats.groups) return [];
-
+  if (!Array.isArray(statsArray) || statsArray.length === 0) return [];
+  
+  // football-data.org format: [{period:'ALL', groups:[{groupName:'X', statisticsItems:[{name, home, away}]}]}]
+  // Try to find the ALL period, fallback to first
+  const periodData = statsArray.find(s => s.period === 'ALL') || statsArray[0];
+  
+  if (!periodData) return [];
+  
   let flatStats = [];
-  allStats.groups.forEach(group => {
-    if (Array.isArray(group.statisticsItems)) {
-      group.statisticsItems.forEach(item => {
-        flatStats.push({
-          type: item.name || item.key,
-          home: String(item.home || item.homeValue || "0"),
-          away: String(item.away || item.awayValue || "0"),
+  
+  if (periodData.groups && Array.isArray(periodData.groups)) {
+    periodData.groups.forEach(group => {
+      if (Array.isArray(group.statisticsItems)) {
+        group.statisticsItems.forEach(item => {
+          flatStats.push({
+            type: item.name || item.key || item.type,
+            home: String(item.home ?? item.homeValue ?? '--'),
+            away: String(item.away ?? item.awayValue ?? '--'),
+          });
         });
+      }
+    });
+  }
+  
+  // Fallback: some APIs return [{team:{id}, statistics:[{type, value}]}, ...]
+  if (flatStats.length === 0 && statsArray.length === 2 && statsArray[0].statistics) {
+    const homeStats = statsArray[0];
+    const awayStats = statsArray[1];
+    homeStats.statistics.forEach((s, idx) => {
+      const awayStat = awayStats.statistics[idx];
+      flatStats.push({
+        type: s.type,
+        home: String(s.value ?? '--'),
+        away: String(awayStat?.value ?? '--')
       });
-    }
-  });
+    });
+  }
 
   return flatStats;
 }
@@ -869,17 +905,20 @@ function translateStat(type) {
 }
 
 function renderLineups(lineupsData, match) {
-  let html = "";
-  if (!lineupsData) return html;
+  if (!lineupsData) return `<p style="text-align:center;color:var(--text-secondary);padding:30px">${STATE.currentLang === 'ar' ? 'التشكيلات غير متوفرة بعد' : 'Lineups not available yet'}</p>`;
 
+  let html = '';
   const sides = [
-    { key: "home", teamName: match.teams.home.name, teamLogo: match.teams.home.logo },
-    { key: "away", teamName: match.teams.away.name, teamLogo: match.teams.away.logo }
+    { key: 'home', teamName: match.teams.home.name, teamLogo: match.teams.home.logo },
+    { key: 'away', teamName: match.teams.away.name, teamLogo: match.teams.away.logo }
   ];
 
   sides.forEach(side => {
     const lineup = lineupsData[side.key];
-    if (!lineup || !lineup.players) return;
+    if (!lineup) return;
+
+    const players = lineup.players || [];
+    const bench   = lineup.bench || [];
 
     html += `
       <div class="lineup-section">
@@ -887,23 +926,57 @@ function renderLineups(lineupsData, match) {
           <img src="${side.teamLogo}" alt="${side.teamName}" onerror="this.style.display='none'" />
           ${side.teamName}
         </div>
-        <div class="lineup-formation">${t("formation")}: ${lineup.formation || "N/A"}</div>
+        <div class="lineup-formation">${t('formation')}: ${lineup.formation || 'N/A'}</div>
     `;
 
-    lineup.players.forEach((p) => {
-      const player = p.player;
-      html += `
-        <div class="lineup-player">
-          <span class="player-number">${player.jerseyNumber || player.shirtNumber || ""}</span>
-          <span class="player-name">${player.name || player.shortName || ""}</span>
-          <span class="player-pos">${player.position || ""}</span>
-        </div>
-      `;
-    });
+    if (players.length > 0) {
+      html += `<div style="font-size:12px;color:var(--accent);padding:8px 0;font-weight:700;">
+        ${STATE.currentLang === 'ar' ? '⚽ التشكيلة الأساسية' : '⚽ Starting XI'}
+      </div>`;
+      players.forEach((p) => {
+        const player = p.player || p;
+        const num = player.jerseyNumber || player.shirtNumber || '';
+        const name = player.name || player.shortName || player.surname || '';
+        const pos = p.pos || player.position || '';
+        html += `
+          <div class="lineup-player">
+            <span class="player-number">${num}</span>
+            <span class="player-name">${name}</span>
+            <span class="player-pos">${pos}</span>
+          </div>
+        `;
+      });
+    } else {
+      html += `<p style="color:var(--text-secondary);padding:10px 0;font-size:13px;">${STATE.currentLang === 'ar' ? 'لا توجد بيانات تشكيلة' : 'No lineup data'}</p>`;
+    }
 
-    html += "</div>";
+    if (bench.length > 0) {
+      html += `<div style="font-size:12px;color:var(--text-secondary);padding:8px 0 4px;font-weight:700;border-top:1px solid var(--border);margin-top:8px;">
+        ${STATE.currentLang === 'ar' ? '🪑 الاحتياط' : '🪑 Bench'}
+      </div>`;
+      bench.forEach((p) => {
+        const player = p.player || p;
+        const num = player.jerseyNumber || player.shirtNumber || '';
+        const name = player.name || player.shortName || '';
+        html += `
+          <div class="lineup-player" style="opacity:0.7;">
+            <span class="player-number">${num}</span>
+            <span class="player-name">${name}</span>
+          </div>
+        `;
+      });
+    }
+
+    // Coach
+    if (lineup.coach?.name) {
+      html += `<div style="font-size:12px;color:var(--text-secondary);padding:8px 0;border-top:1px solid var(--border);margin-top:8px;">
+        🧑‍💼 ${STATE.currentLang === 'ar' ? 'المدرب' : 'Coach'}: <strong>${lineup.coach.name}</strong>
+      </div>`;
+    }
+
+    html += '</div>';
   });
-  return html;
+  return html || `<p style="text-align:center;color:var(--text-secondary);padding:30px">${STATE.currentLang === 'ar' ? 'التشكيلات غير متوفرة' : 'Lineups unavailable'}</p>`;
 }
 
 function closeModal() {
