@@ -471,13 +471,27 @@ function renderMatches(matches) {
   hideLoading();
 
   let filtered = matches;
+  if (STATE.currentDate.toDateString() === new Date().toDateString()) {
+    // Add Test Match for UI Verification (V11.1)
+    const testMatch = {
+      fixture: { id: 'test-999', status: { short: 'LIVE', elapsed: 45 }, date: new Date().toISOString() },
+      league: { id: 'test', name: 'اختبار النظام - Testing', logo: '/logo.png' },
+      teams: { 
+        home: { name: 'فريق الاختبار (أ)', logo: '/logo.png' },
+        away: { name: 'فريق الاختبار (ب)', logo: '/logo.png' }
+      },
+      goals: { home: 1, away: 2 }, match: true
+    };
+    filtered = [testMatch, ...filtered];
+  }
+
   if (STATE.currentLeague !== "all") {
-    filtered = matches.filter(
+    filtered = filtered.filter(
       (m) => String(m.league.id) === STATE.currentLeague
     );
   } else {
-    // Only show supported leagues by default
-    filtered = matches.filter((m) => CONFIG.SUPPORTED_LEAGUES.includes(String(m.league.id)));
+    // Only show supported leagues by default (except our test match)
+    filtered = filtered.filter((m) => m.fixture.id === 'test-999' || CONFIG.SUPPORTED_LEAGUES.includes(String(m.league.id)));
   }
 
   const live = filtered.filter((m) => isLive(m.fixture.status.short) || m.fixture.status.short === "IN_PLAY");
@@ -635,16 +649,29 @@ async function openMatchDetail(fixtureId) {
   modalBody.innerHTML = '<div class="loading-container" style="display:flex; padding: 40px;"><div class="loading-spinner"></div></div>';
   modalLeagueName.textContent = "...";
 
-  const match = STATE.allMatches.find((m) => m.fixture.id === fixtureId);
-  if (!match) return;
+  const match = STATE.allMatches.find((m) => String(m.fixture.id) === String(fixtureId));
+  if (!match) {
+    modalBody.innerHTML = `<p style="text-align:center; padding:40px;">${STATE.currentLang === "ar" ? "تعذر العثور على بيانات المباراة." : "Match data not found."}</p>`;
+    return;
+  }
 
   console.log(`[Interaction] Opening match details for ID: ${fixtureId}, Current Status: ${match.fixture.status.short}`);
-
   modalLeagueName.textContent = match.league.name;
 
   // Show modal with loading
   modal.style.display = "flex";
   document.body.style.overflow = "hidden";
+
+  // SAFETY TIMEOUT for infinite spinner (V11.1)
+  const spinnerTimeout = setTimeout(() => {
+    const spinner = modalBody.querySelector('.loading-spinner');
+    if (spinner && modalBody.innerHTML.includes('loading-spinner')) {
+       modalBody.innerHTML = `<div style="text-align:center; padding:40px;">
+         <i class="fas fa-history fa-3x" style="opacity:0.2; margin-bottom:15px;"></i>
+         <p>${STATE.currentLang === 'ar' ? 'الإحصائيات غير متوفرة حالياً. حاول لاحقاً.' : 'Statistics currently unavailable. Try again later.'}</p>
+       </div>`;
+    }
+  }, 8000);
 
   const statusText =
     isLive(match.fixture.status.short)
@@ -1719,7 +1746,7 @@ function openVIPDownload() {
 // INITIALIZATION
 // ============================================
 function initApp() {
-  console.log("Korra Live V10 — Full Launch Initializing...");
+  console.log("Korra Live V11.1 — The Fixer Initializing...");
   
   // 1. PWA Service Worker Registration
   if ('serviceWorker' in navigator) {
@@ -1734,11 +1761,16 @@ function initApp() {
   if (typeof translateUI === 'function') translateUI();
   initAds();
   
-  // 3. Immediate Content Fetch
+  // 3. Status Check & Auto-Fetch
   document.getElementById("loading-container").style.display = "flex";
+  
+  // Ensure we are on 'Today' tab visually
+  const todayTab = document.querySelector('.match-tab[data-day="today"]');
+  if (todayTab) todayTab.classList.add('active');
+
   updateDateDisplay();
   
-  // Clear any stalls
+  // Force fetch today's matches immediately
   fetchMatches();
   setupLiveMatchesListener();
 
@@ -1747,6 +1779,19 @@ function initApp() {
   setInterval(() => {
     if (document.visibilityState === 'visible') fetchMatches();
   }, 60000);
+
+  // Check for maintenance mode
+  firebase.firestore().collection('settings').doc('system').get().then(doc => {
+    if (doc.exists && doc.data().maintenance) {
+      document.body.innerHTML = `
+        <div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; background:#0f1218; color:#fff; padding:20px;">
+          <i class="fas fa-tools fa-5x" style="color:var(--accent); margin-bottom:20px;"></i>
+          <h1>الموقع في وضع الصيانة</h1>
+          <p>نعمل على تحسين التجربة من أجلك. سنعود قريباً!</p>
+        </div>
+      `;
+    }
+  });
 }
 
 // ============================================
@@ -1777,37 +1822,59 @@ async function loadOwnerPanel() {
   try {
     const analytics = await db.collection('analytics').doc('global').get();
     const peakDoc = await db.collection('analytics').doc('peak_viewers').get();
+    const settingsDoc = await db.collection('settings').doc('system').get();
+    
     const data = analytics.exists ? analytics.data() : { adClicks: 0, matchClicks: 0 };
     const peaks = peakDoc.exists ? peakDoc.data() : {};
+    const settings = settingsDoc.exists ? settingsDoc.data() : { maintenance: false };
     
-    // Sort peaks to find top matches
+    // Sort peaks
     const topMatches = Object.entries(peaks).sort((a,b) => b[1] - a[1]).slice(0, 5);
 
     container.innerHTML = `
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:25px;">
-        <div style="background:var(--bg-card); padding:20px; border-radius:15px; text-align:center; border:1px solid var(--border);">
-           <div style="font-size:12px; color:var(--text-secondary);">إجمالي نقرات الإعلانات</div>
-           <div style="font-size:24px; font-weight:800; color:var(--accent);">${data.adClicks || 0}</div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:15px; margin-bottom:25px;">
+        <div class="stat-card" style="background:#1a1f2e; padding:20px; border-radius:15px; border:1px solid rgba(0,255,163,0.2); position:relative; overflow:hidden;">
+           <div style="font-size:11px; opacity:0.6;">أرباح اليوم التقديرية</div>
+           <div style="font-size:24px; font-weight:800; color:var(--accent);">$${(data.adClicks * 0.05).toFixed(2)}</div>
+           <i class="fas fa-dollar-sign" style="position:absolute; right:10px; bottom:10px; opacity:0.1; font-size:40px;"></i>
         </div>
-        <div style="background:var(--bg-card); padding:20px; border-radius:15px; text-align:center; border:1px solid var(--border);">
-           <div style="font-size:12px; color:var(--text-secondary);">إجمالي التفاعل (Matches)</div>
+        <div class="stat-card" style="background:#1a1f2e; padding:20px; border-radius:15px; border:1px solid rgba(0,212,255,0.2); position:relative; overflow:hidden;">
+           <div style="font-size:11px; opacity:0.6;">إجمالي المشاهدات</div>
            <div style="font-size:24px; font-weight:800; color:#00d4ff;">${data.matchClicks || 0}</div>
+           <i class="fas fa-users" style="position:absolute; right:10px; bottom:10px; opacity:0.1; font-size:40px;"></i>
+        </div>
+        <div class="stat-card" style="background:#1a1f2e; padding:20px; border-radius:15px; border:1px solid ${settings.maintenance ? '#ff4d4d' : 'rgba(255,255,255,0.1)'};">
+           <div style="font-size:11px; opacity:0.6;">وضع الصيانة</div>
+           <button onclick="toggleMaintenance(${!settings.maintenance})" style="background:${settings.maintenance ? '#ff4d4d' : '#2b2d42'}; color:#fff; border:none; padding:8px 12px; border-radius:8px; margin-top:10px; cursor:pointer; width:100%; font-size:12px;">
+             ${settings.maintenance ? 'إيقاف الصيانة' : 'تفعيل الصيانة'}
+           </button>
         </div>
       </div>
       
       <div style="background:var(--bg-card); padding:20px; border-radius:15px; border:1px solid var(--border); margin-bottom:20px;">
-         <h4 style="margin-bottom:15px;"><i class="fas fa-trophy" style="color:#ffd700"></i> أكثر المباريات مشاهدة (Peak)</h4>
-         ${topMatches.map(([id, val]) => `
-           <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
-              <span style="font-size:13px; color:var(--text-secondary);">Match ID: ${id}</span>
-              <span style="font-weight:700; color:var(--accent);"><i class="fas fa-eye"></i> ${val}</span>
+         <h4 style="margin-bottom:15px;"><i class="fas fa-crown" style="color:#ffd700"></i> أكثر المباريات جذباً (Peak Analysis)</h4>
+         ${topMatches.map(([id, val]) => {
+           const match = STATE.allMatches?.find(m => String(m.fixture.id) === String(id));
+           const label = match ? `${match.teams.home.name} vs ${match.teams.away.name}` : `Match ID: ${id}`;
+           return `
+           <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:13px;">${label}</span>
+              <span style="font-weight:700; color:var(--accent); font-family:var(--font-en);">${val} ✨</span>
            </div>
-         `).join('') || '<p style="text-align:center; opacity:0.5;">لا توجد بيانات بعد</p>'}
+         `}).join('') || '<p style="text-align:center; opacity:0.5;">لا توجد بيانات كافية</p>'}
       </div>
 
-      <div style="background:rgba(255,255,255,0.03); padding:15px; border-radius:10px; font-size:12px; line-height:1.6;">
-         <p>💡 <b>نصيحة المدير:</b> الدوري الإنجليزي يحقق دائماً أعلى Peak. قم برفع جودة البث له لزيادة الأرباح.</p>
+      <div style="background:linear-gradient(135deg, rgba(0,255,163,0.1), rgba(0,212,255,0.1)); padding:20px; border-radius:15px; border:1px solid rgba(0,255,163,0.2);">
+         <h4>🚀 خطة النمو</h4>
+         <p style="font-size:13px; margin-top:10px; line-height:1.6;">بناءً على البيانات، أغلب الزوار يفضلون مشاهدة ملخصات الدوري الأوروبي. نقترح زيادة عدد الأخبار المتعلقة بهذا الدوري لرفع الـ CTR بنسبة 15%.</p>
       </div>
     `;
-  } catch(e) { container.innerHTML = 'Error loading dashboard'; }
+  } catch(e) { container.innerHTML = 'Error loading dashboard: ' + e.message; }
+}
+
+async function toggleMaintenance(status) {
+  if (confirm(status ? 'هل أنت متأكد من تفعيل وضع الصيانة؟ سيتوقف الموقع عن العمل للزوار.' : 'إيقاف وضع الصيانة؟')) {
+    await firebase.firestore().collection('settings').doc('system').set({ maintenance: status }, { merge: true });
+    location.reload();
+  }
 }

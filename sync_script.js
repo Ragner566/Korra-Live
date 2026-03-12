@@ -3,12 +3,12 @@ const axios = require('axios');
 const fsMod = require('fs');
 
 // ============================================================
-// SYNC SCRIPT V8.0 — Multi-Source (Football-Data + ESPN)
-// Fixes: expanded competitions, improved fuzzy matching, archiving
+// SYNC SCRIPT V11.1 — Multi-Source (Football-Data + ESPN)
+// Coverage: Major Leagues + CL + EL + Conference League
 // ============================================================
 
-// Expanded to catch all available free-tier competitions
-const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "ELC", "DED", "PPL", "BSA", "CLI"];
+// Expanded to catch all available free-tier competitions + Conference League
+const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC", "ELC", "DED", "PPL", "BSA", "CLI"];
 const FOOTBALL_DATA_TOKEN = process.env.FOOTBALL_DATA_TOKEN || "33e62ca975a749858503fdf63b75d9d7";
 const BASE_URL = "https://api.football-data.org/v4";
 
@@ -21,6 +21,7 @@ const LEAGUE_MAPPING_ESPN = {
   "FL1": "fra.1",
   "CL":  "uefa.champions",
   "EL":  "uefa.europa",
+  "EC":  "uefa.conf",
   "ELC": "eng.2",
   "DED": "ned.1",
   "PPL": "por.1",
