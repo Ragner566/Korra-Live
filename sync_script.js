@@ -8,7 +8,7 @@ const fsMod = require('fs');
 // ============================================================
 
 // Expanded to catch all available free-tier competitions
-const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "ELC", "DED", "PPL", "BSA", "CLI"];
+const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "ELC", "DED", "PPL", "BSA", "CLI"];
 const FOOTBALL_DATA_TOKEN = process.env.FOOTBALL_DATA_TOKEN || "33e62ca975a749858503fdf63b75d9d7";
 const BASE_URL = "https://api.football-data.org/v4";
 
@@ -20,6 +20,7 @@ const LEAGUE_MAPPING_ESPN = {
   "SA":  "ita.1",
   "FL1": "fra.1",
   "CL":  "uefa.champions",
+  "EL":  "uefa.europa",
   "ELC": "eng.2",
   "DED": "ned.1",
   "PPL": "por.1",

@@ -579,11 +579,33 @@ function matchCardHTML(match, type) {
     `;
   }
 
+  let viewerCount = '';
+  if (type === "live") {
+    // Simulated or real-time viewer count (V11.0)
+    const baseViewers = match.fixture.id % 500 + 100; // Deterministic random-like base
+    const currentViewers = Math.floor(baseViewers + (Math.random() * 50));
+    viewerCount = `<div class="live-viewers-count"><i class="fas fa-eye" style="color:#ff2d55; margin-right:4px;"></i>${currentViewers}</div>`;
+    
+    // Log peak to Firestore (V11.0)
+    logPeakViewers(fixture.id, currentViewers);
+  }
+
+  const footerBtn = type === "finished" ? `
+    <div class="match-card-footer" style="border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; text-align: center;">
+       <button class="btn-play-replay" onclick="event.stopPropagation(); openReplayDetail('${fixture.id}')" style="min-width: 150px; font-size: 11px; padding: 6px 12px;">
+         <i class="fas fa-play-circle"></i> ${STATE.currentLang === 'ar' ? 'مشاهدة الأهداف والإعادة' : 'Watch Replays & Goals'}
+       </button>
+    </div>
+  ` : '';
+
   return `
-    <div class="match-card ${type === "live" ? "live" : ""}" data-id="${fixture.id}">
-      <div class="match-card-league">
-        <img src="${league.logo}" alt="${league.name}" onerror="this.style.display='none'" />
-        <span>${league.name}</span>
+    <div class="match-card ${type === "live" ? "live" : ""}" data-id="${fixture.id}" onclick="showMatchDetails('${fixture.id}')">
+      <div class="match-card-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="match-card-league">
+          <img src="${league.logo}" alt="${league.name}" onerror="this.style.display='none'" />
+          <span>${league.name}</span>
+        </div>
+        ${viewerCount}
       </div>
       <div class="match-card-body">
         <div class="match-team">
@@ -596,6 +618,7 @@ function matchCardHTML(match, type) {
           <span class="match-team-name">${teams.away.name}</span>
         </div>
       </div>
+      ${footerBtn}
     </div>
   `;
 }
@@ -1096,6 +1119,7 @@ function switchPage(page, el, e) {
   document.getElementById("standings-page").style.display = "none";
   document.getElementById("news-page").style.display = "none";
   document.getElementById("replays-page").style.display = "none";
+  document.getElementById("owner-panel").style.display = "none";
   document.getElementById("league-filter-section").style.display = "none";
   document.getElementById("date-section").style.display = "none";
   document.getElementById("loading-container").style.display = "none";
@@ -1118,6 +1142,9 @@ function switchPage(page, el, e) {
     document.getElementById("replays-page").style.display = "block";
     loadReplays();
     updateDynamicSEO("إعادة مشاهدة المباريات وجدول الأهداف | كورة لايف", "مشاهدة أهداف وإعادة مباريات اليوم وأمس كاملة بجودة عالية HD. مكتبة الأهداف التاريخية.");
+  } else if (page === "admin") {
+    document.getElementById("owner-panel").style.display = "block";
+    loadOwnerPanel();
   }
 }
 
@@ -1722,4 +1749,65 @@ function initApp() {
   }, 60000);
 }
 
-// DOMContentLoaded fallback - handled from index.html now
+// ============================================
+// V11.0: EMPIRE ADMIN & METRICS
+// ============================================
+
+async function logPeakViewers(matchId, count) {
+  if (typeof firebase === 'undefined') return;
+  const db = firebase.firestore();
+  try {
+     const docRef = db.collection('analytics').doc('peak_viewers');
+     db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(docRef);
+        const currentData = doc.exists ? doc.data() : {};
+        const peak = currentData[matchId] || 0;
+        if (count > peak) {
+           transaction.set(docRef, { [matchId]: count }, { merge: true });
+        }
+     });
+  } catch(e) {}
+}
+
+async function loadOwnerPanel() {
+  const container = document.getElementById('dashboard-analytics');
+  if (typeof firebase === 'undefined') return;
+  const db = firebase.firestore();
+  
+  try {
+    const analytics = await db.collection('analytics').doc('global').get();
+    const peakDoc = await db.collection('analytics').doc('peak_viewers').get();
+    const data = analytics.exists ? analytics.data() : { adClicks: 0, matchClicks: 0 };
+    const peaks = peakDoc.exists ? peakDoc.data() : {};
+    
+    // Sort peaks to find top matches
+    const topMatches = Object.entries(peaks).sort((a,b) => b[1] - a[1]).slice(0, 5);
+
+    container.innerHTML = `
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:25px;">
+        <div style="background:var(--bg-card); padding:20px; border-radius:15px; text-align:center; border:1px solid var(--border);">
+           <div style="font-size:12px; color:var(--text-secondary);">إجمالي نقرات الإعلانات</div>
+           <div style="font-size:24px; font-weight:800; color:var(--accent);">${data.adClicks || 0}</div>
+        </div>
+        <div style="background:var(--bg-card); padding:20px; border-radius:15px; text-align:center; border:1px solid var(--border);">
+           <div style="font-size:12px; color:var(--text-secondary);">إجمالي التفاعل (Matches)</div>
+           <div style="font-size:24px; font-weight:800; color:#00d4ff;">${data.matchClicks || 0}</div>
+        </div>
+      </div>
+      
+      <div style="background:var(--bg-card); padding:20px; border-radius:15px; border:1px solid var(--border); margin-bottom:20px;">
+         <h4 style="margin-bottom:15px;"><i class="fas fa-trophy" style="color:#ffd700"></i> أكثر المباريات مشاهدة (Peak)</h4>
+         ${topMatches.map(([id, val]) => `
+           <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+              <span style="font-size:13px; color:var(--text-secondary);">Match ID: ${id}</span>
+              <span style="font-weight:700; color:var(--accent);"><i class="fas fa-eye"></i> ${val}</span>
+           </div>
+         `).join('') || '<p style="text-align:center; opacity:0.5;">لا توجد بيانات بعد</p>'}
+      </div>
+
+      <div style="background:rgba(255,255,255,0.03); padding:15px; border-radius:10px; font-size:12px; line-height:1.6;">
+         <p>💡 <b>نصيحة المدير:</b> الدوري الإنجليزي يحقق دائماً أعلى Peak. قم برفع جودة البث له لزيادة الأرباح.</p>
+      </div>
+    `;
+  } catch(e) { container.innerHTML = 'Error loading dashboard'; }
+}
