@@ -67,7 +67,7 @@
     <header class="app-bar" id="app-bar">
       <div class="logo">
         <img src="/logo.png" class="logo-icon" alt="Korra Live Logo" style="width:32px; height:32px; border-radius: 8px; margin-left: 8px;" />
-        <span>Korra Live <span class="sync-badge">V13.0</span></span>
+        <span>Korra Live <span class="sync-badge">V13.1</span></span>
       </div>
       <div class="actions">
         <button class="icon-btn" onclick="openInstallWizard()" title="Download App" style="color:var(--accent); border-color:var(--accent);">
@@ -142,20 +142,22 @@
          </div>
       </div>
 
-      <!-- Match Day Tabs -->
-      <section class="match-tabs-section" id="date-section">
-        <div class="match-tabs">
-          <button class="match-tab" data-day="yesterday" onclick="selectMatchDay('yesterday', this)">
-            <span data-i18n="yesterday">أمس</span>
-          </button>
-          <button class="match-tab active" data-day="today" onclick="selectMatchDay('today', this)">
-            <span data-i18n="today">اليوم</span>
-          </button>
-          <button class="match-tab" data-day="tomorrow" onclick="selectMatchDay('tomorrow', this)">
-            <span data-i18n="tomorrow">غداً</span>
-          </button>
-        </div>
-      </section>
+      <!-- Main Content Area (Matches Feed) -->
+      <div class="main-feed">
+        <!-- Match Day Tabs -->
+        <section class="match-tabs-section" id="date-section">
+          <div class="match-tabs">
+            <button class="match-tab" data-day="yesterday" onclick="selectMatchDay('yesterday', this)">
+              <span data-i18n="yesterday">أمس</span>
+            </button>
+            <button class="match-tab active" data-day="today" onclick="selectMatchDay('today', this)">
+              <span data-i18n="today">اليوم</span>
+            </button>
+            <button class="match-tab" data-day="tomorrow" onclick="selectMatchDay('tomorrow', this)">
+              <span data-i18n="tomorrow">غداً</span>
+            </button>
+          </div>
+        </section>
 
       <!-- Loading Indicator -->
       <div class="loading-container" id="loading-container">
@@ -206,11 +208,12 @@
         <div class="matches-list" id="finished-matches"></div>
       </section>
 
-      <!-- No Matches -->
-      <div class="no-matches" id="no-matches" style="display:none">
-        <i class="far fa-futbol"></i>
-        <p data-i18n="noMatches">لا توجد مباريات في هذا اليوم</p>
-      </div>
+        <!-- No Matches -->
+        <div class="no-matches" id="no-matches" style="display:none">
+          <i class="far fa-futbol"></i>
+          <p data-i18n="noMatches">لا توجد مباريات في هذا اليوم</p>
+        </div>
+      </div> <!-- End .main-feed -->
 
       <!-- Match Detail Modal -->
       <div class="modal-overlay" id="match-modal" style="display:none">

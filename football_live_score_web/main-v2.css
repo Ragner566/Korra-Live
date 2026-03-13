@@ -40,12 +40,13 @@ html {
   background-color: var(--bg-main);
 }
 
+/* V13.1: Golden Grid & Interaction Fix */
 body {
   background-color: var(--bg-main);
   color: var(--text-primary);
   font-family: var(--font-ar);
   -webkit-font-smoothing: antialiased;
-  max-width: 500px;
+  max-width: 500px; /* Mobile Default */
   margin: 0 auto;
   min-height: 100vh;
   position: relative;
@@ -53,57 +54,68 @@ body {
   background-image: 
     radial-gradient(circle at 0% 0%, rgba(0, 255, 163, 0.05) 0%, transparent 40%),
     radial-gradient(circle at 100% 100%, rgba(112, 0, 255, 0.05) 0%, transparent 40%);
+  overflow-x: hidden;
 }
 
-/* V13.0: Reality Check Desktop Overhaul */
 @media (min-width: 1024px) {
   body {
     max-width: 100%;
     background-image: none;
-    padding: 0 40px;
+    padding: 0;
+  }
+  .app-bar {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    left: 0;
+    right: 0;
+    border-radius: 0 0 20px 20px;
   }
   .content {
     display: grid;
-    grid-template-columns: 280px 1fr 320px;
-    gap: 30px;
+    grid-template-columns: 280px 1fr 280px;
+    gap: 25px;
+    max-width: 1200px;
+    margin: 30px auto;
+    padding: 0 20px;
     align-items: start;
-    margin-top: 30px;
+    pointer-events: auto;
   }
-  /* Ensure league filter behaves as sidebar on desktop */
   .league-filter-section {
+    grid-column: 1;
     position: sticky;
     top: 100px;
-    grid-column: 1;
     z-index: 10;
   }
-  .league-chips {
-    flex-direction: column;
-    overflow-x: visible;
-    padding: 10px;
-    gap: 12px;
-  }
-  .league-chip {
-    width: 100%;
-    justify-content: flex-start;
-    padding: 12px 20px;
-  }
-  
-  /* Main feed in center */
-  .matches-container {
+  .main-feed {
     grid-column: 2;
+    min-width: 600px;
   }
-  
-  /* Sidebar for Ads/News on Right */
-  .ad-container-top {
+  .ad-container-top { display: none; } /* Hide mobile-style top ads */
+  #ad-top { 
+    display: block !important; 
     grid-column: 3;
-    margin: 0;
     position: sticky;
     top: 100px;
+    margin: 0 !important;
   }
+  .bottom-nav { display: none !important; }
 }
+
 @media (max-width: 1023px) {
-  .content { display: block; }
+  .content { display: block; padding-bottom: 80px; }
+  .main-feed { width: 100%; }
 }
+
+/* Fix for dead clicks: ensure sections don't overlap */
+.section { position: relative; z-index: 1; pointer-events: auto; }
+.modal-overlay { z-index: 10000 !important; }
+.install-wizard { z-index: 10001 !important; }
+
+.league-chips {
+  scrollbar-width: none;
+}
+.league-chips::-webkit-scrollbar { display: none; }
 
 .app-bar {
   display: flex;

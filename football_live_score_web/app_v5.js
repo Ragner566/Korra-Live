@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "13.0"
+  VERSION: "13.1"
 };
 
 let STATE = {
@@ -854,19 +854,31 @@ async function openMatchDetail(fixtureId) {
     lineupsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:30px;font-weight:700">${msg}</p>`;
   }
 
-  // V13.0: Initialize Player if Test Match
-  if (fixtureId === 'test-999' && typeof Hls !== 'undefined') {
-    const video = document.getElementById('live-player');
-    const hlsSource = match.fixture.live_link;
-    if (video) {
-      if (Hls.isSupported()) {
-        const hls = new Hls();
-        hls.loadSource(hlsSource);
-        hls.attachMedia(video);
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = hlsSource;
+  // V13.1: Auto-switch to streaming tab for Test Match or specific live requests
+  if (fixtureId === 'test-999') {
+    setTimeout(() => {
+      const liveTabBtn = document.querySelector('button[onclick*="streaming-tab"]');
+      if (liveTabBtn) switchModalTab('streaming-tab', liveTabBtn);
+      
+      // Initialize Player
+      if (typeof Hls !== 'undefined') {
+        const video = document.getElementById('live-player');
+        const hlsSource = match.fixture.live_link;
+        if (video) {
+          if (Hls.isSupported()) {
+            const hls = new Hls();
+            hls.loadSource(hlsSource);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = hlsSource;
+            video.play();
+          }
+        }
       }
-    }
+    }, 100);
+  } else if (isLiveMatch && typeof Hls !== 'undefined') {
+     // Normal live matches initialize placeholder or player if link exists
   }
 }
 
@@ -1802,7 +1814,7 @@ function openVIPDownload() {
 }
 
 function initApp() {
-  console.log(`Korra Live V${CONFIG.VERSION} — Reality Check Initializing...`);
+  console.log(`Korra Live V${CONFIG.VERSION} — Final Gold Sync Initializing...`);
   
   // V13.0: Force Update Check
   checkForUpdates();
