@@ -2076,13 +2076,23 @@ function playLiveStream(matchId, playerId = 'main-player') {
        if (doc.exists && doc.data().url) {
            const hlsUrl = doc.data().url;
            
-           // ADVANCED CONFIG (Task 6)
+           // V20: ADVANCED BYPASS CONFIG
            const config = {
                xhrSetup: function (xhr, url) {
-                   xhr.withCredentials = false; // Bypass CORS protection
+                   xhr.withCredentials = false;
+                   xhr.setRequestHeader('Referrer', ''); // Clear referrer
+                   xhr.setRequestHeader('Origin', ''); // Clear origin
                },
-               manifestLoadingMaxRetry: 4,
-               levelLoadingMaxRetry: 4
+               fetchSetup: function(context, initParams) {
+                   initParams.referrer = '';
+                   initParams.referrerPolicy = 'no-referrer';
+                   initParams.credentials = 'omit';
+                   return new Request(context.url, initParams);
+               },
+               manifestLoadingMaxRetry: 6,
+               levelLoadingMaxRetry: 6,
+               fragLoadingMaxRetry: 6,
+               startLevel: -1  // Auto-select best quality
            };
 
            if (typeof Hls !== 'undefined' && Hls.isSupported()) {
