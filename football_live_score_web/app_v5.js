@@ -647,7 +647,7 @@ function matchCardHTML(match, type) {
          <i class="fas fa-play"></i> ${manualUrl ? '⚡ شاهد الآن' : 'شاهد البث المباشر'}
        </button>
     </div>
-  ` : (type === "finished" ? `
+` : (type === "finished" ? `
     <div class="match-card-footer" style="border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; text-align: center;">
        <button class="btn-play-replay" onclick="event.stopPropagation(); openReplayDetail('${fixture.id}')" style="min-width: 150px; font-size: 11px; padding: 6px 12px;">
          <i class="fas fa-play-circle"></i> ${STATE.currentLang === 'ar' ? 'مشاهدة الأهداف والإعادة' : 'Watch Replays & Goals'}
@@ -763,7 +763,7 @@ async function openMatchDetail(fixtureId) {
     <div id="modal-streaming-tab" class="modal-tab-content">
       <div class="streaming-container" style="text-align: center; padding: 20px;">
         <div id="video-wrapper" class="video-player-placeholder" style="width: 100%; height: auto; aspect-ratio: 16/9; background: #000; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; border: 1px solid var(--border); position: relative; overflow: hidden;">
-          <video id="inline-player" controls style="width:100%; height:100%; border-radius:12px;"></video>
+          <video id="inline-player" muted autoplay controls style="width:100%; height:100%; border-radius:12px;"></video>
         </div>
         <button onclick="playLiveStream('${fixtureId}', 'inline-player')" style="background:var(--accent); color:#000; border:none; padding:10px 20px; border-radius:8px; font-weight:800; cursor:pointer; margin-bottom:15px;">تشغيل البث (HLS)</button>
         <h4 style="margin-bottom: 15px; color: var(--accent);">بث مباشر فوري (مشغل HLS المتقدم)</h4>
@@ -2044,28 +2044,27 @@ function setupManualStreamListener() {
   });
 }
 
-// V19.5: STRICT HLS PLAYER INTEGRATION (FORCED)
+// V19.5: STRICT HLS PLAYER INTEGRATION (FORCED CONFIG & RECOVERY)
 function playLiveStream(matchId, playerId = 'main-player') {
    const db = firebase.firestore();
    
-   // If triggered from match card, setup the Modal with the Video element first
    if (playerId === 'main-player') {
        const modal = document.getElementById("match-modal");
        const modalBody = document.getElementById("modal-body");
        const modalLeagueName = document.getElementById("modal-league-name");
        
-       modalLeagueName.textContent = "بث مباشر - HLS PLAYER";
-       modal.id = 'player-modal'; // Alias for user request compatibility
+       modalLeagueName.textContent = "بث مباشر - HLS OPTIMIZED";
+       modal.id = 'player-modal';
        modal.style.display = "flex";
        
        modalBody.innerHTML = `
          <div style="background: #000; border-radius: 15px; overflow: hidden; position: relative; aspect-ratio: 16/9; margin-bottom: 20px; border: 2px solid #00ffa3;">
-             <video id="main-player" controls style="width:100%; height:100%;"></video>
-             <div style="position: absolute; top: 10px; right: 10px; background: #2ecc71; color: #fff; padding: 4px 10px; border-radius: 6px; font-weight: 900; font-size: 10px; animation: pulse 1s infinite;">STRICT HLS</div>
+             <video id="main-player" muted autoplay controls style="width:100%; height:100%;"></video>
+             <div style="position: absolute; top: 10px; right: 10px; background: #2ecc71; color: #fff; padding: 4px 10px; border-radius: 6px; font-weight: 900; font-size: 10px; animation: pulse 1s infinite;">HLS ACTIVE</div>
          </div>
          <div style="text-align:center; padding:15px; background:rgba(255,255,255,0.03); border-radius:12px;">
-            <p style="color:#00ffa3; font-weight:800;">يتم الآن تحميل البث المباشر...</p>
-            <button onclick="document.getElementById('player-modal').style.display='none'; location.reload();" style="background:#ff4d4d; color:#fff; border:none; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:800;">إغلاق المشغل</button>
+            <p style="color:#00ffa3; font-weight:800; font-size:12px;">جاري تشغيل البث بأفضل جودة متاحة...</p>
+            <button onclick="document.getElementById('player-modal').style.display='none';" style="background:#ff4d4d; color:#fff; border:none; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:800; margin-top:10px;">إغلاق</button>
          </div>
        `;
    }
@@ -2073,33 +2072,45 @@ function playLiveStream(matchId, playerId = 'main-player') {
    const video = document.getElementById(playerId);
    if (!video) return;
 
-   // Fetch from correct path: live_links
    db.collection("live_links").doc(String(matchId)).get().then((doc) => {
        if (doc.exists && doc.data().url) {
            const hlsUrl = doc.data().url;
+           
+           // ADVANCED CONFIG (Task 6)
+           const config = {
+               xhrSetup: function (xhr, url) {
+                   xhr.withCredentials = false; // Bypass CORS protection
+               },
+               manifestLoadingMaxRetry: 4,
+               levelLoadingMaxRetry: 4
+           };
+
            if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-               const hls = new Hls();
+               const hls = new Hls(config);
                hls.loadSource(hlsUrl);
                hls.attachMedia(video);
-               hls.on(Hls.Events.MANIFEST_PARSED, function() { 
-                   video.play().catch(e => console.warn("Auto-play blocked, waiting for user interaction.")); 
+               hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                   video.play().catch(e => console.log("Play failed, click to start"));
+               });
+               // Auto-recovery on error
+               hls.on(Hls.Events.ERROR, (event, data) => {
+                   if (data.fatal) {
+                       console.warn("Fatal HLS error, retrying...", data.type);
+                       hls.startLoad();
+                   }
                });
            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                video.src = hlsUrl;
-               video.play().catch(e => console.warn("Auto-play blocked."));
+               video.play();
            }
            
-           // Support both IDs
            const modal = document.getElementById('player-modal') || document.getElementById('match-modal');
            if (modal) modal.style.display = 'flex';
 
        } else {
            alert("يا فلاش الرابط مش موجود في Firebase تأكد من المسار!");
        }
-   }).catch(e => {
-       console.error("Firebase Error:", e);
-       alert("❌ خطأ في الاتصال بقاعدة البيانات: " + e.message);
-   });
+   }).catch(e => alert("❌ خطأ: " + e.message));
 }
 
 // ============================================
