@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "13.1"
+  VERSION: "14.1"
 };
 
 let STATE = {
@@ -1860,14 +1860,21 @@ function initApp() {
   fetchMatches();
   setupLiveMatchesListener();
 
-  // 4. Analytics & Real-time Tracking (V14.0 Absolute)
+  // 4. Analytics & Real-time Tracking (V14.1 Absolute)
   logVisit();
   logDeviceType();
   trackRealtimeActiveUser();
+  watchGlobalVersion(); // NEW V14.1 Desktop Watcher
   
   setInterval(() => {
     if (document.visibilityState === 'visible') fetchMatches();
   }, 120000);
+
+  // V14.1: Monitor upcoming matches for auto-start
+  setInterval(() => monitorMatchStarts(), 30000);
+
+  // Hide Splash Screen after initial load
+  setTimeout(() => hideSplashScreen(), 2500);
 
   // Check for maintenance mode
   if (typeof firebase !== 'undefined' && firebase.firestore) {
@@ -1896,31 +1903,66 @@ function logDeviceType() {
   });
 }
 
-// V14.0: Real-time User Tracking Logic (Improved)
+// V14.1: Real-time User Tracking Logic (Absolute Precision)
 function trackRealtimeActiveUser() {
   if (typeof firebase === 'undefined' || !firebase.database) return;
   try {
     const rdb = firebase.database();
-    const presenceRef = rdb.ref('presence/' + Math.random().toString(36).substr(2, 9));
-    
-    // Set device property
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    presenceRef.set({
-      last_active: firebase.database.ServerValue.TIMESTAMP,
-      device: isMobile ? 'Mobile' : 'Desktop',
-      platform: 'Web/PWA'
-    });
-    
-    // Remove on disconnect
-    presenceRef.onDisconnect().remove();
-    
-    // Also update legacy counters if needed
-    const countRef = rdb.ref('presence_total');
-    countRef.transaction(current => (current || 0) + 1);
-    presenceRef.onDisconnect().remove(() => {
-       countRef.transaction(current => (current || 0) - 1);
+    const myPresenceRef = rdb.ref('presence').push();
+    const totalRef = rdb.ref('presence_total');
+    const connectedRef = rdb.ref('.info/connected');
+
+    connectedRef.on('value', snap => {
+      if (snap.val() === true) {
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        myPresenceRef.onDisconnect().remove();
+        myPresenceRef.set({
+          last_active: firebase.database.ServerValue.TIMESTAMP,
+          device: isMobile ? 'Mobile' : 'Desktop',
+          id: Math.random().toString(36).substr(2, 5)
+        });
+        
+        // Use a transaction for the global counter
+        totalRef.transaction(current => (current || 0) + 1);
+        myPresenceRef.onDisconnect().remove(() => {
+           totalRef.transaction(current => (current || 0) - 1);
+        });
+      }
     });
   } catch(e) { console.error("RTDB Presence failed:", e); }
+}
+
+function hideSplashScreen() {
+  const splash = document.getElementById('splash-screen');
+  if (splash) {
+    splash.style.opacity = '0';
+    setTimeout(() => splash.style.display = 'none', 800);
+  }
+}
+
+async function watchGlobalVersion() {
+  try {
+    const res = await fetch('/version.json?t=' + Date.now());
+    const data = await res.json();
+    if (data.latestVersion && parseFloat(data.latestVersion) > parseFloat(CONFIG.VERSION)) {
+       showUpdateModal(data.latestVersion);
+    }
+  } catch(e) {}
+}
+
+function monitorMatchStarts() {
+  // Logic to auto-refresh or auto-switch when a match time is reached
+  const now = new Date();
+  STATE.allMatches.forEach(match => {
+    const matchTime = new Date(match.fixture.timestamp * 1000);
+    // If match is starting now (within 1 min) and it's scheduled, switch it
+    if (STATE.currentDate.toDateString() === now.toDateString()) {
+       if (Math.abs(now - matchTime) < 60000 && match.fixture.status.short === "NS") {
+          console.log(`[Auto-Stream] Match ${match.fixture.id} starting... Refreshing feed.`);
+          fetchMatches();
+       }
+    }
+  });
 }
 
 function syncRealtimeViewers(matchId) {

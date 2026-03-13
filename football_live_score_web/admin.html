@@ -66,7 +66,7 @@
     <div class="wrapper" id="admin-panel" style="display:none;">
         <aside class="sidebar">
             <div style="font-size: 24px; font-weight: 900; margin-bottom: 50px; color: var(--primary); font-family: 'Outfit';">
-                KORRA <span style="font-size:12px; opacity:0.6;">V13.1</span>
+                KORRA <span style="font-size:12px; opacity:0.6;">V14.1</span>
             </div>
             <div style="padding: 15px; background: rgba(0,255,163,0.05); border-radius: 12px; border: 1px solid rgba(0,255,163,0.1); margin-bottom: 30px;">
                 <p style="font-size: 12px; margin: 0 0 10px 0; opacity: 0.6;">حالة السيرفر</p>
@@ -219,12 +219,13 @@
                 }
             });
 
-            // V14.0: REAL-TIME USERS from RTDB (Presence Path)
+            // V14.1: REAL-TIME USERS from RTDB (Absolute)
             rdb.ref('presence_total').on('value', snap => {
-                document.getElementById('realtime-users').innerText = snap.val() || 0;
+                const count = snap.val() || 0;
+                document.getElementById('realtime-users').innerText = count;
             });
 
-            // DEVICE SEGMENTATION (Table Fix)
+            // DEVICE SEGMENTATION
             rdb.ref('presence').on('value', snap => {
                 let m = 0, d = 0;
                 snap.forEach(child => {

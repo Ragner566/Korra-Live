@@ -646,3 +646,21 @@ body {
   color: var(--accent);
   font-weight: bold;
 }
+/* Splash Screen Styles (V14.1) */
+.splash-overlay {
+  position: fixed;
+  inset: 0;
+  background: #05070a;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.8s cubic-bezier(0.19, 1, 0.22, 1);
+}
+.splash-content { text-align: center; }
+.splash-logo { width: 100px; height: 100px; border-radius: 20px; margin-bottom: 20px; animation: breathe 2s infinite ease-in-out; }
+@keyframes breathe { 0%, 100% { transform: scale(1); opacity: 0.8; filter: drop-shadow(0 0 5px var(--accent-glow)); } 50% { transform: scale(1.1); opacity: 1; filter: drop-shadow(0 0 20px var(--accent-glow)); } }
+.splash-loader { width: 60px; height: 3px; background: rgba(0, 255, 163, 0.1); margin: 0 auto 15px; position: relative; border-radius: 10px; overflow: hidden; }
+.splash-loader::after { content: ''; position: absolute; left: -100%; width: 100%; height: 100%; background: var(--accent); animation: loading-line 1.5s infinite; }
+@keyframes loading-line { 0% { left: -100%; } 100% { left: 100%; } }
+.splash-text { color: var(--accent); font-weight: 900; letter-spacing: 6px; font-size: 12px; font-family: var(--font-en); opacity: 0.8; }
