@@ -214,16 +214,22 @@ async function selectMatchDay(day, btn) {
   await fetchMatches(null);
 }
 
-// Event Delegation for Match Cards
+// Delegation for Match Cards & Navigation
 document.addEventListener('click', function(e) {
+  // Navigation tabs
+  if (e.target.closest('.match-tab')) {
+    const btn = e.target.closest('.match-tab');
+    const day = btn.dataset.day;
+    selectMatchDay(day, btn);
+    return;
+  }
+
+  // Match Cards
   const card = e.target.closest('.match-card');
   if (card && card.dataset.id) {
     const matchId = card.dataset.id;
-    const match = STATE.allMatches.find(m => String(m.fixture.id) === String(matchId));
-    console.log("Match Data Clicked:", match); // Logic requested for debugging JSON
-    
     if (typeof showInterstitial === 'function') showInterstitial();
-    openMatchDetail(parseInt(matchId));
+    openMatchDetail(matchId); // Pass as string
   }
 });
 
@@ -561,12 +567,13 @@ function updateLeagueLiveScores(allMatches) {
     const label = chip.querySelector('span[data-i18n]');
     if (liveMatch && label) {
       chip.classList.add('live-pulse');
+      chip.style.borderColor = "#00ffa3";
       const homeScore = liveMatch.goals?.home ?? 0;
       const awayScore = liveMatch.goals?.away ?? 0;
-      const originalText = t(label.getAttribute('data-i18n'));
-      label.innerHTML = `<span style="color:#00ffa3; font-weight:900;">LIVE</span> ${homeScore}-${awayScore}`;
+      label.innerHTML = `🟢 <span style="font-family:var(--font-en); font-weight:900;">${homeScore}-${awayScore}</span>`;
     } else if (label) {
       chip.classList.remove('live-pulse');
+      chip.style.borderColor = "";
       label.textContent = t(label.getAttribute('data-i18n'));
     }
   });
@@ -634,7 +641,7 @@ function matchCardHTML(match, type) {
   ` : '';
 
   return `
-    <div class="match-card ${type === "live" ? "live" : ""}" data-id="${fixture.id}" onclick="openMatchDetail('${fixture.id}')">
+    <div class="match-card ${type === "live" ? "live" : ""}" data-id="${fixture.id}">
       <div class="match-card-header" style="display:flex; justify-content:space-between; align-items:center;">
         <div class="match-card-league">
           <img src="${league.logo}" alt="${league.name}" onerror="this.style.display='none'" />
@@ -785,9 +792,9 @@ async function openMatchDetail(fixtureId) {
   const eventsContainer = document.getElementById("modal-events");
   const statsContainer = document.getElementById("modal-statistics");
   const lineupsContainer = document.getElementById("modal-lineups-tab");
-  const status = match.fixture.status.short;
+  const mStatus = match.fixture.status.short;
 
-  const isStarted = isFinished(status) || isLive(status);
+  const isStarted = isFinished(mStatus) || isLive(mStatus);
 
   // Render events
   if (isStarted) {
@@ -1776,7 +1783,7 @@ function openVIPDownload() {
 }
 
 function initApp() {
-  console.log("Korra Live V12.2 — The Master Release Initializing...");
+  console.log("Korra Live V12.1 — Absolute Control Release Initializing...");
   
   // 1. PWA Service Worker Registration
   if ('serviceWorker' in navigator) {
