@@ -3,13 +3,48 @@ const axios = require('axios');
 require('dotenv').config();
 
 // ============================================================
-// CONFIGURATION & API LIMITS
-// supported competitions for Football-Data.org Free Tier:
-// PL (Premier League), PD (La Liga), BL1 (Bundesliga), SA (Serie A), FL1 (Ligue 1), CL (Champions League)
+// CONFIGURATION
 // ============================================================
 const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL"];
 const FOOTBALL_DATA_TOKEN = process.env.FOOTBALL_DATA_TOKEN || "33e62ca975a749858503fdf63b75d9d7";
 const BASE_URL = "https://api.football-data.org/v4";
+
+// ============================================================
+// IPTV CHANNEL MAPPING
+// Maps broadcast channel names -> IPTV-Org channel IDs
+// ============================================================
+const CHANNEL_KEYWORDS_MAP = {
+  "bein sports hd 1":   "beIN Sports HD 1",
+  "bein sports hd 2":   "beIN Sports HD 2",
+  "bein sports hd 3":   "beIN Sports HD 3",
+  "bein sports hd 4":   "beIN Sports HD 4",
+  "bein sports 1":      "beIN Sports HD 1",
+  "bein sports 2":      "beIN Sports HD 2",
+  "bein sports 3":      "beIN Sports HD 3",
+  "bein sports extra":  "beIN Sports HD 4",
+  "sky sports":         "Sky Sports Premier League",
+  "sky sports pl":      "Sky Sports Premier League",
+  "bt sport":           "BT Sport 1",
+  "canal+":             "Canal+ Sport",
+  "dazn":               "DAZN 1 Germany",
+  "sport 1":            "Sport 1 Germany",
+  "mbc sport":          "MBC Sports HD",
+  "al kass":            "Al Kass HD",
+  "ssc":                "SSC Sports 1",
+  "abu dhabi sport":    "Abu Dhabi Sports 1 HD",
+};
+
+// Known static links for the most common Arabic sports channels (fallback)
+const STATIC_CHANNEL_LINKS = {
+  "beIN Sports HD 1":          "https://iptv-org.github.io/streams/bein_sports_hd_1.m3u8",
+  "beIN Sports HD 2":          "https://iptv-org.github.io/streams/bein_sports_hd_2.m3u8",
+  "beIN Sports HD 3":          "https://iptv-org.github.io/streams/bein_sports_hd_3.m3u8",
+  "beIN Sports HD 4":          "https://iptv-org.github.io/streams/bein_sports_hd_4.m3u8",
+  "Sky Sports Premier League": "https://iptv-org.github.io/streams/sky_sports_premier_league.m3u8",
+  "MBC Sports HD":             null,
+  "SSC Sports 1":              null,
+  "Abu Dhabi Sports 1 HD":     null,
+};
 
 const fsMod = require('fs');
 let serviceAccount;
@@ -34,11 +69,99 @@ const db = admin.database();
 const fs = admin.firestore();
 
 // ============================================================
+// IPTV FETCHER - Parse ara.m3u from iptv-org
+// ============================================================
+let _iptvCache = null;
+
+async function fetchIPTVChannels() {
+  if (_iptvCache) return _iptvCache;
+  console.log("[IPTV] Fetching Arabic channel list from iptv-org...");
+  try {
+    const res = await axios.get("https://iptv-org.github.io/iptv/languages/ara.m3u", {
+      timeout: 15000,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KorraLive/20.5)' }
+    });
+    // Parse M3U
+    const lines = res.data.split('\n');
+    const channels = {};
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('#EXTINF')) {
+        const nameMatch = lines[i].match(/tvg-name="([^"]+)"/i) || lines[i].match(/,(.+)$/);
+        const rawUrl = lines[i + 1]?.trim();
+        if (nameMatch && rawUrl && rawUrl.startsWith('http')) {
+          const name = (nameMatch[1] || '').trim();
+          channels[name.toLowerCase()] = { name, url: rawUrl };
+        }
+      }
+    }
+    console.log(`[IPTV] Parsed ${Object.keys(channels).length} channels.`);
+    _iptvCache = channels;
+    return channels;
+  } catch (e) {
+    console.warn("[IPTV] Failed to fetch ara.m3u:", e.message);
+    return {};
+  }
+}
+
+// Look up a stream URL for a broadcaster name
+async function findStreamUrl(broadcasterName) {
+  if (!broadcasterName) return null;
+  const lower = broadcasterName.toLowerCase();
+
+  // Check our keyword map
+  for (const [keyword, channelName] of Object.entries(CHANNEL_KEYWORDS_MAP)) {
+    if (lower.includes(keyword)) {
+      // First check static links
+      if (STATIC_CHANNEL_LINKS[channelName]) {
+        return STATIC_CHANNEL_LINKS[channelName];
+      }
+      // Then check live IPTV list
+      const channels = await fetchIPTVChannels();
+      const found = channels[channelName.toLowerCase()];
+      if (found) return found.url;
+    }
+  }
+
+  // Fuzzy search in live IPTV list
+  const channels = await fetchIPTVChannels();
+  for (const [key, val] of Object.entries(channels)) {
+    if (key.includes(lower) || lower.includes(key)) {
+      return val.url;
+    }
+  }
+
+  return null;
+}
+
+// ============================================================
+// SAVE CHANNELS LIST TO FIREBASE (for 24/7 page)
+// ============================================================
+async function saveIPTVChannelsToFirebase() {
+  console.log("[IPTV] Saving channel list to Firebase...");
+  const channels = await fetchIPTVChannels();
+
+  // Sport channels only (filter)
+  const sportKeywords = ['sport', 'bein', 'sky', 'dazn', 'canal', 'kass', 'ssc', 'mbc sport', 'abu dhabi sport', 'al jazeera', 'arab'];
+  const sportChannels = Object.values(channels).filter(ch =>
+    sportKeywords.some(kw => ch.name.toLowerCase().includes(kw))
+  ).slice(0, 60); // Max 60 channels
+
+  try {
+    await fs.collection('live_tv').doc('channels').set({
+      channels: sportChannels,
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      source: 'iptv-org/arabic'
+    });
+    console.log(`[IPTV] Saved ${sportChannels.length} sport channels to Firestore live_tv/channels`);
+  } catch (e) {
+    console.error("[IPTV] Failed to save channels:", e.message);
+  }
+}
+
+// ============================================================
 // DATA FETCHING HELPERS
 // ============================================================
-
 async function fetchMatchDetails(matchId) {
-  console.log(`Fetching details for match ${matchId}...`);
   try {
     const res = await axios.get(`${BASE_URL}/matches/${matchId}`, {
       headers: { "X-Auth-Token": FOOTBALL_DATA_TOKEN },
@@ -46,10 +169,7 @@ async function fetchMatchDetails(matchId) {
     });
     return res.data;
   } catch (e) {
-    if (e.response && e.response.status === 429) {
-      console.warn("Rate limit hit while fetching details. Skipping...");
-      return "LIMIT";
-    }
+    if (e.response?.status === 429) return "LIMIT";
     console.error(`Error fetching details for match ${matchId}: ${e.message}`);
     return null;
   }
@@ -60,34 +180,28 @@ async function fetchMatchesForRange(dateFrom, dateTo) {
   try {
     const res = await axios.get(`${BASE_URL}/matches`, {
       headers: { "X-Auth-Token": FOOTBALL_DATA_TOKEN },
-      params: { 
-        dateFrom, 
-        dateTo,
-        competitions: SUPPORTED_COMPETITIONS.join(',') 
-      },
+      params: { dateFrom, dateTo, competitions: SUPPORTED_COMPETITIONS.join(',') },
       timeout: 15000
     });
-    
+
     let matches = res.data.matches || [];
-    
-    // ENHANCEMENT: Fetch details (lineups/goals) for LIVE or recently played matches
-    // But limit to avoid hitting 10 req/min too hard
-    const importantMatches = matches.filter(m => (m.status === "IN_PLAY" || m.status === "FINISHED" || m.status === "PAUSED")).slice(0, 8);
-    
-    console.log(`Deep fetching details for ${importantMatches.length} important matches...`);
+
+    // Deep fetch for LIVE/FINISHED
+    const importantMatches = matches.filter(m =>
+      ["IN_PLAY", "FINISHED", "PAUSED"].includes(m.status)
+    ).slice(0, 6);
+
     for (let i = 0; i < importantMatches.length; i++) {
-        const m = importantMatches[i];
-        const details = await fetchMatchDetails(m.id);
-        if (details === "LIMIT") break; // Stop if rate limited
-        if (details) {
-            // Append details to the match object
-            m.detailsFetched = true;
-            m.lineups = details.lineups || null;
-            m.statistics = details.statistics || [];
-            m.goals_events = details.goals || [];
-        }
-        // Wait 6.5s to stay under 10req/min
-        if (i < importantMatches.length - 1) await new Promise(r => setTimeout(r, 6500));
+      const m = importantMatches[i];
+      const details = await fetchMatchDetails(m.id);
+      if (details === "LIMIT") break;
+      if (details) {
+        m.detailsFetched = true;
+        m.lineups = details.lineups || null;
+        m.statistics = details.statistics || [];
+        m.goals_events = details.goals || [];
+      }
+      if (i < importantMatches.length - 1) await new Promise(r => setTimeout(r, 6500));
     }
 
     return matches.map(m => ({
@@ -96,23 +210,21 @@ async function fetchMatchesForRange(dateFrom, dateTo) {
         status: { short: m.status, elapsed: m.minute || null },
         date: m.utcDate
       },
-      league: { 
-        name: m.competition.name, 
-        id: m.competition.code, 
-        logo: m.competition.emblem 
+      league: {
+        name: m.competition.name,
+        id: m.competition.code,
+        logo: m.competition.emblem
       },
       teams: {
         home: { name: m.homeTeam.shortName || m.homeTeam.name, id: m.homeTeam.id, logo: m.homeTeam.crest },
         away: { name: m.awayTeam.shortName || m.awayTeam.name, id: m.awayTeam.id, logo: m.awayTeam.crest }
       },
-      goals: {
-        home: m.score.fullTime.home,
-        away: m.score.fullTime.away
-      },
+      goals: { home: m.score.fullTime.home, away: m.score.fullTime.away },
       score: m.score,
       lineups: m.lineups,
       statistics: m.statistics,
       events: m.goals_events,
+      broadcasters: m.odds?.msg || null, // may have broadcaster info
       source: "football-data.org (enriched)"
     }));
   } catch (e) {
@@ -122,13 +234,11 @@ async function fetchMatchesForRange(dateFrom, dateTo) {
 }
 
 async function fetchStandings(competitionCode) {
-  console.log(`Fetching standings for ${competitionCode}...`);
   try {
     const res = await axios.get(`${BASE_URL}/competitions/${competitionCode}/standings`, {
       headers: { "X-Auth-Token": FOOTBALL_DATA_TOKEN },
       timeout: 15000
     });
-    
     return res.data.standings || [];
   } catch (e) {
     console.error(`Error fetching standings for ${competitionCode}: ${e.message}`);
@@ -137,52 +247,89 @@ async function fetchStandings(competitionCode) {
 }
 
 // ============================================================
-// MAIN RUN FUNCTION
+// MAIN RUN
 // ============================================================
-
 async function run() {
-  console.log("=== Kora Live Comprehensive Fix Script ===");
-  
-  // 1. Fetch & Store Matches (Yesterday, Today, Tomorrow)
+  console.log("=== Kora Live V20.5 - Smart Fetch + IPTV Mapper ===");
+
+  // Step 0: Load IPTV channels in background
+  const iptvPromise = fetchIPTVChannels();
+
   const now = new Date();
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
-  
   const dStr = (d) => d.toISOString().split('T')[0];
-  
+
+  // Step 1: Fetch matches
   const matches = await fetchMatchesForRange(dStr(yesterday), dStr(tomorrow));
-  
+
   if (matches) {
-    // Group matches by date
     const grouped = {};
     matches.forEach(m => {
       const date = m.fixture.date.split('T')[0];
       if (!grouped[date]) grouped[date] = [];
       grouped[date].push(m);
     });
-    
-    // Save to Firestore & Realtime DB
+
     for (const [date, events] of Object.entries(grouped)) {
-      // 1. Realtime DB (Legacy support)
-      await db.ref(`/matches/${date}`).set({
-        events,
-        lastUpdated: Date.now(),
-        source: "football-data.org"
-      });
-      console.log(`Saved ${events.length} matches for ${date} in RTDB`);
-      
-      // 2. Firestore (Primary)
+      await db.ref(`/matches/${date}`).set({ events, lastUpdated: Date.now(), source: "football-data.org" });
       await fs.collection('matches').doc(date).set({
         events,
         lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
         source: "football-data.org"
       });
-      console.log(`Saved ${events.length} matches for ${date} in Firestore`);
+      console.log(`Saved ${events.length} matches for ${date}`);
 
-      // Special labels: today, yesterday, tomorrow
       if (date === dStr(now)) {
         await fs.collection('matches').doc('today').set({ events, lastUpdated: admin.firestore.FieldValue.serverTimestamp() });
         await db.ref("/live_matches").set({ events, lastUpdated: Date.now(), quotaExceeded: false });
+
+        // Step 2: Auto-link IPTV streams to today's live/upcoming matches
+        console.log("[IPTV] Auto-mapping streams to today's matches...");
+        await iptvPromise; // Ensure IPTV is loaded
+
+        for (const match of events) {
+          const fixtureId = String(match.fixture.id);
+
+          // Check if already has a manual link
+          const existingDoc = await fs.collection('live_links').doc(fixtureId).get();
+          if (existingDoc.exists && existingDoc.data().url && !existingDoc.data().autoGenerated) {
+            console.log(`[IPTV] Skip ${fixtureId} - has manual link.`);
+            continue;
+          }
+
+          // Try to find a relevant stream via league name or competition
+          const leagueName = match.league?.name || '';
+          let streamUrl = null;
+
+          // Try well-known league -> channel mapping
+          if (leagueName.includes('Premier League')) {
+            streamUrl = await findStreamUrl('sky sports pl');
+          } else if (leagueName.includes('La Liga')) {
+            streamUrl = await findStreamUrl('bein sports hd 1');
+          } else if (leagueName.includes('Champions League')) {
+            streamUrl = await findStreamUrl('bein sports hd 2');
+          } else if (leagueName.includes('Serie A')) {
+            streamUrl = await findStreamUrl('bein sports hd 3');
+          } else if (leagueName.includes('Bundesliga')) {
+            streamUrl = await findStreamUrl('bein sports hd 1');
+          } else if (leagueName.includes('Ligue 1')) {
+            streamUrl = await findStreamUrl('bein sports hd 4');
+          }
+
+          if (streamUrl) {
+            await fs.collection('live_links').doc(fixtureId).set({
+              url: streamUrl,
+              autoGenerated: true,
+              leagueSource: leagueName,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: false }); // Don't override manual links (handled above)
+            console.log(`[IPTV] ✅ Auto-linked ${match.teams.home.name} vs ${match.teams.away.name} -> ${streamUrl}`);
+          } else {
+            console.log(`[IPTV] ❌ No stream found for ${match.teams.home.name} vs ${match.teams.away.name}`);
+          }
+        }
+
       } else if (date === dStr(yesterday)) {
         await fs.collection('matches').doc('yesterday').set({ events, lastUpdated: admin.firestore.FieldValue.serverTimestamp() });
       } else if (date === dStr(tomorrow)) {
@@ -191,7 +338,10 @@ async function run() {
     }
   }
 
-  // 2. Fetch & Store Standings for 6 Leagues in Firestore
+  // Step 3: Save IPTV channels to Firestore for 24/7 page
+  await saveIPTVChannelsToFirebase();
+
+  // Step 4: Fetch standings
   for (const code of SUPPORTED_COMPETITIONS) {
     const standings = await fetchStandings(code);
     if (standings) {
@@ -199,25 +349,23 @@ async function run() {
         standings,
         lastUpdated: new Date().toISOString()
       });
-      console.log(`Saved standings for ${code} in Firestore`);
+      console.log(`Saved standings for ${code}`);
     }
-    // Respect rate limit (10 req/min)
-    await new Promise(r => setTimeout(r, 6500)); 
+    await new Promise(r => setTimeout(r, 6500));
   }
 
-  // 3. Update Firestore 'korra' field
+  // Step 5: Update verified token record
   try {
     await fs.collection('settings').doc('global').set({
       korra: FOOTBALL_DATA_TOKEN,
       footballDataToken: FOOTBALL_DATA_TOKEN,
       lastSmartUpdate: new Date().toISOString()
     }, { merge: true });
-    console.log("Firestore updated with verified token.");
   } catch (e) {
-    console.error("Firestore update failed:", e.message);
+    console.error("Firestore settings update failed:", e.message);
   }
 
-  console.log("=== Run Completed Successfully ===");
+  console.log("=== V20.5 Run Completed ===");
   process.exit(0);
 }
 

@@ -261,7 +261,27 @@
         <div id="replays-list" style="padding: 0 12px;"></div>
       </section>
 
-      <!-- OWNER PANEL (V11.0 Private Dash) -->
+      <!-- 24/7 Live Channels Section -->
+      <section class="section" id="live-tv-page" style="display:none">
+        <div class="section-header" style="padding: 0 16px 16px;">
+          <h2 class="section-title">
+            <i class="fas fa-broadcast-tower" style="color:#ff2d55;"></i> قنوات رياضية 24/7
+          </h2>
+          <span class="match-count" id="tv-count">0</span>
+        </div>
+        <div style="padding: 0 12px;">
+          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:15px; text-align:center;">
+             <i class="fas fa-info-circle"></i> اضغط على أي قناة لمشاهدتها فوراً عبر المشغل الذكي
+          </p>
+          <div id="channels-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div style="grid-column:1/-1; text-align:center; padding:30px;">
+              <div class="loading-spinner" style="margin:0 auto 15px;"></div>
+              <p>جاري تحميل القنوات...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="section owner-panel" id="owner-panel" style="display:none">
         <div class="section-header">
            <h2 class="section-title"><i class="fas fa-chart-line"></i> Dashboard CEO</h2>
@@ -319,6 +339,11 @@
       <a href="#" class="nav-item" data-page="replays" onclick="switchPage('replays', this, event)">
         <i class="fas fa-play-circle"></i>
         <span>الإعادة</span>
+      </a>
+      <a href="#" class="nav-item" data-page="live-tv" onclick="switchPage('live-tv', this, event)" style="position:relative;">
+        <i class="fas fa-broadcast-tower" style="color:#ff2d55;"></i>
+        <span style="color:#ff2d55;">بث 24/7</span>
+        <span style="position:absolute; top:4px; right:6px; background:#ff2d55; color:#fff; font-size:7px; padding:1px 4px; border-radius:4px; font-weight:900;">LIVE</span>
       </a>
     </nav>
 

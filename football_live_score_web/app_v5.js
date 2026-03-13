@@ -1214,6 +1214,7 @@ function switchPage(page, el, e) {
   document.getElementById("date-section").style.display = "none";
   document.getElementById("loading-container").style.display = "none";
   document.getElementById("error-container").style.display = "none";
+  if (document.getElementById("live-tv-page")) document.getElementById("live-tv-page").style.display = "none";
 
   if (page === "matches") {
     document.getElementById("league-filter-section").style.display = "block";
@@ -1231,7 +1232,11 @@ function switchPage(page, el, e) {
   } else if (page === "replays") {
     document.getElementById("replays-page").style.display = "block";
     loadReplays();
-    updateDynamicSEO("إعادة مشاهدة المباريات وجدول الأهداف | كورة لايف", "مشاهدة أهداف وإعادة مباريات اليوم وأمس كاملة بجودة عالية HD. مكتبة الأهداف التاريخية.");
+    updateDynamicSEO("إعادة مشاهدة المباريات وجدول الأهداف | كورة لايف", "مشاهدة أهداف وإعادة مباريات اليوم وأمس كاملة بجودة عالية HD.");
+  } else if (page === "live-tv") {
+    document.getElementById("live-tv-page").style.display = "block";
+    loadLiveTV();
+    updateDynamicSEO("قنوات رياضية مباشرة 24/7 | كورة لايف", "شاهد بين سبورت، سكاي سبورت، MBC Sport وغيرها مباشرة ومجاناً.");
   } else if (page === "admin") {
     document.getElementById("owner-panel").style.display = "block";
     loadOwnerPanel();
@@ -2419,3 +2424,180 @@ async function toggleMaintenance(status) {
     location.reload();
   }
 }
+
+// ============================================
+// V20.5: 24/7 LIVE TV CHANNELS PAGE
+// ============================================
+
+// Channel icon map for visual appeal
+const CHANNEL_ICONS = {
+  'bein': '📡',
+  'sky': '☁️',
+  'mbc': '📺',
+  'ssc': '🏟️',
+  'abu dhabi': '🇦🇪',
+  'al kass': '🇶🇦',
+  'al jazeera': '📰',
+  'canal': '🎬',
+  'sport': '⚽',
+  'dazn': '🎯',
+};
+
+function getChannelIcon(name) {
+  const lower = (name || '').toLowerCase();
+  for (const [key, icon] of Object.entries(CHANNEL_ICONS)) {
+    if (lower.includes(key)) return icon;
+  }
+  return '📺';
+}
+
+let _liveTVLoaded = false;
+
+async function loadLiveTV() {
+  const grid = document.getElementById('channels-grid');
+  const countEl = document.getElementById('tv-count');
+  if (!grid) return;
+
+  // Show cached if already loaded this session
+  if (_liveTVLoaded && grid.children.length > 1) return;
+
+  grid.innerHTML = `
+    <div style="grid-column:1/-1; text-align:center; padding:30px;">
+      <div class="loading-spinner" style="margin:0 auto 15px;"></div>
+      <p>\u062c\u0627\u0631\u064a \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u0642\u0646\u0648\u0627\u062a...</p>
+    </div>
+  `;
+
+  try {
+    // Try Firestore first (pre-populated by fetch-scores.js)
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      const doc = await firebase.firestore().collection('live_tv').doc('channels').get();
+      if (doc.exists && doc.data().channels?.length > 0) {
+        _renderChannels(doc.data().channels, grid, countEl);
+        _liveTVLoaded = true;
+        return;
+      }
+    }
+
+    // Fallback: Fetch directly from iptv-org
+    console.log('[LiveTV] Firestore empty, fetching from iptv-org directly...');
+    const res = await fetch('https://iptv-org.github.io/iptv/languages/ara.m3u', {
+      headers: { 'Referrer-Policy': 'no-referrer' }
+    });
+    const text = await res.text();
+    const lines = text.split('\n');
+    const channels = [];
+    const sportKeywords = ['sport', 'bein', 'sky', 'ssc', 'kass', 'mbc sport', 'abu dhabi sport', 'dazn', 'canal'];
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('#EXTINF')) {
+        const nameMatch = lines[i].match(/tvg-name="([^"]+)"/i) || lines[i].match(/,(.+)$/);
+        const logoMatch = lines[i].match(/tvg-logo="([^"]+)"/i);
+        const rawUrl = lines[i + 1]?.trim();
+        if (nameMatch && rawUrl && rawUrl.startsWith('http')) {
+          const name = (nameMatch[1] || '').trim();
+          if (sportKeywords.some(kw => name.toLowerCase().includes(kw))) {
+            channels.push({ name, url: rawUrl, logo: logoMatch?.[1] || null });
+          }
+        }
+      }
+    }
+
+    _renderChannels(channels.slice(0, 50), grid, countEl);
+    _liveTVLoaded = true;
+
+  } catch (e) {
+    grid.innerHTML = `
+      <div style="grid-column:1/-1; text-align:center; padding:30px;">
+        <i class="fas fa-exclamation-triangle" style="color:#ff4d4d; font-size:2rem; margin-bottom:10px;"></i>
+        <p style="color:#ff4d4d;">\u062a\u0639\u0630\u0631 \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u0642\u0646\u0648\u0627\u062a: ${e.message}</p>
+        <button onclick="loadLiveTV()" style="background:var(--accent); color:#000; border:none; padding:8px 15px; border-radius:8px; cursor:pointer; margin-top:10px;">\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629</button>
+      </div>
+    `;
+  }
+}
+
+function _renderChannels(channels, grid, countEl) {
+  if (!channels || channels.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:30px; opacity:0.5;">\u0644\u0627 \u062a\u0648\u062c\u062f \u0642\u0646\u0648\u0627\u062a \u0645\u062a\u0627\u062d\u0629 \u062d\u0627\u0644\u064a\u0627\u064b</div>`;
+    return;
+  }
+
+  if (countEl) countEl.textContent = channels.length;
+
+  grid.innerHTML = channels.map((ch, idx) => `
+    <div onclick="playChannelStream(${idx}, ${JSON.stringify(ch.url).replace(/"/g, '&quot;')}, ${JSON.stringify(ch.name).replace(/"/g, '&quot;')})"
+         style="background:var(--bg-card); border:1px solid var(--border); border-radius:15px; padding:15px; cursor:pointer; 
+                text-align:center; transition:all 0.2s; position:relative; overflow:hidden;"
+         onmouseover="this.style.borderColor='var(--accent)'; this.style.transform='scale(1.02)'"
+         onmouseout="this.style.borderColor='var(--border)'; this.style.transform='scale(1)'">
+      <div style="font-size:2rem; margin-bottom:8px;">${ch.logo ? `<img src="${ch.logo}" style="width:50px;height:50px;object-fit:contain;border-radius:8px;" onerror="this.outerHTML='${getChannelIcon(ch.name)}'">` : getChannelIcon(ch.name)}</div>
+      <div style="font-size:11px; font-weight:700; line-height:1.4; color:var(--text-primary);">${ch.name}</div>
+      <div style="position:absolute; top:6px; left:6px; background:#ff2d55; color:#fff; font-size:7px; padding:2px 5px; border-radius:4px; font-weight:900; animation:pulse 1.5s infinite;">LIVE</div>
+    </div>
+  `).join('');
+}
+
+// Uses the same triple-layer player
+function playChannelStream(idx, url, name) {
+  const modal = document.getElementById('match-modal');
+  const modalBody = document.getElementById('modal-body');
+  const modalLeagueName = document.getElementById('modal-league-name');
+
+  modalLeagueName.textContent = name + ' - LIVE';
+  modal.id = 'player-modal';
+  modal.style.display = 'flex';
+
+  modalBody.innerHTML = `
+    <div style="background:#000; border-radius:15px; overflow:hidden; position:relative; aspect-ratio:16/9; margin-bottom:20px; border:2px solid #ff2d55;">
+      <video id="channel-player" muted autoplay controls style="width:100%; height:100%;"></video>
+      <div style="position:absolute; top:8px; right:8px; background:#ff2d55; color:#fff; padding:3px 8px; border-radius:5px; font-size:9px; font-weight:900; animation:pulse 1s infinite;">LIVE</div>
+    </div>
+    <div style="text-align:center; padding:10px;">
+      <p style="color:var(--accent); font-weight:800; margin-bottom:10px;">${name}</p>
+      <button onclick="document.getElementById('player-modal').style.display='none';" style="background:#ff4d4d; color:#fff; border:none; padding:8px 20px; border-radius:8px; cursor:pointer; font-weight:800;">\u0625\u063a\u0644\u0627\u0642</button>
+    </div>
+  `;
+
+  // Reuse the triple-layer player logic
+  const video = document.getElementById('channel-player');
+  const proxiedUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
+
+  const config = {
+    xhrSetup: (xhr) => { xhr.withCredentials = false; },
+    fetchSetup: (ctx, init) => { init.referrer = ''; init.referrerPolicy = 'no-referrer'; return new Request(ctx.url, init); },
+    manifestLoadingMaxRetry: 2,
+    levelLoadingMaxRetry: 4,
+    startLevel: -1
+  };
+
+  if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+    const hls = new Hls(config);
+    hls.loadSource(url);
+    hls.attachMedia(video);
+
+    let loaded = false;
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      loaded = true;
+      video.play().catch(() => {});
+    });
+    hls.on(Hls.Events.ERROR, (e, d) => {
+      if (d.fatal) {
+        hls.destroy();
+        const hls2 = new Hls(config);
+        hls2.loadSource(proxiedUrl);
+        hls2.attachMedia(video);
+        hls2.on(Hls.Events.MANIFEST_PARSED, () => { loaded = true; video.play().catch(() => {}); });
+        hls2.on(Hls.Events.ERROR, (e2, d2) => { if (d2.fatal) { hls2.destroy(); _activateIframeFallback(video, url); } });
+      }
+    });
+    setTimeout(() => { if (!loaded) { hls.destroy(); _activateIframeFallback(video, url); } }, 5000);
+
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = url;
+    video.play();
+  } else {
+    _activateIframeFallback(video, url);
+  }
+}
+
