@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "19.0"
+  VERSION: "19.5"
 };
 
 let STATE = {
@@ -20,6 +20,7 @@ let STATE = {
   currentLeague: "all",
   currentPage: "matches",
   allMatches: [],
+  streamLinks: {}, // V19.5: Manual stream links storage
   refreshTimer: null,
   progressTimer: null,
   currentLang: "ar",
@@ -636,10 +637,13 @@ function matchCardHTML(match, type) {
     syncRealtimeViewers(fixture.id);
   }
 
-  const streamBtn = match.stream_link ? `
+  const manualUrl = STATE.streamLinks ? STATE.streamLinks[fixture.id] : null;
+  const activeUrl = manualUrl || match.stream_link;
+
+  const streamBtn = activeUrl ? `
     <div class="match-card-footer" style="border-top:1px solid var(--border); padding-top:10px; margin-top:10px;">
-       <button class="btn-primary live-btn-pulse" onclick="event.stopPropagation(); openLiveStream('${fixture.id}')" style="width:100%; background:linear-gradient(135deg,#00ffa3,#00d4ff); color:#000; font-weight:900; border:none; border-radius:10px; padding:10px; cursor:pointer; font-size:12px;">
-         <i class="fas fa-play"></i> ⚡ شاهد البث المباشر الآن
+       <button class="btn-primary live-btn-pulse" onclick="event.stopPropagation(); openLiveStream('${fixture.id}')" style="width:100%; background:linear-gradient(135deg,#2ecc71,#27ae60); color:#fff; font-weight:900; border:none; border-radius:10px; padding:10px; cursor:pointer; font-size:12px; box-shadow:0 0 15px rgba(46,204,113,0.4);">
+         <i class="fas fa-play"></i> ⚡ شاهد الآن
        </button>
     </div>
   ` : (type === "finished" ? `
@@ -1851,6 +1855,7 @@ function initApp() {
   // Force fetch today's matches immediately
   fetchMatches();
   setupLiveMatchesListener();
+  setupManualStreamListener(); // V19.5: Manual Link Observer
 
   // 4. Analytics & Real-time Tracking (V14.1 Absolute)
   logVisit();
@@ -2027,7 +2032,10 @@ function showUpdateModal(newVer) {
 // ============================================
 function openLiveStream(matchId) {
   const match = STATE.allMatches.find(m => String(m.fixture.id) === String(matchId));
-  if (!match || !match.stream_link) {
+  const manualUrl = STATE.streamLinks ? STATE.streamLinks[matchId] : null;
+  const streamUrl = manualUrl || (match ? match.stream_link : null);
+
+  if (!streamUrl) {
       alert("⚠️ عذراً، لم يتوفر رابط البث لهذه المباراة بعد.");
       return;
   }
@@ -2042,30 +2050,40 @@ function openLiveStream(matchId) {
   // Custom design for Streaming Player
   modalBody.innerHTML = `
     <div style="background: #000; border-radius: 15px; overflow: hidden; position: relative; aspect-ratio: 16/9; margin-bottom: 20px;">
-        <iframe src="${match.stream_link}" 
+        <iframe src="${streamUrl}" 
                 style="width:100%; height:100%; border:none;" 
                 sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
                 allowfullscreen></iframe>
         <div style="position: absolute; top: 10px; right: 10px; background: rgba(0,255,163,0.8); color: #000; padding: 4px 10px; border-radius: 6px; font-weight: 900; font-size: 10px; animation: pulse 1s infinite;">LIVE</div>
     </div>
     
-    <!-- Adsterra Small Banner for Player -->
-    <div style="margin: 10px 0; text-align: center;">
-        <script type="text/javascript">
-            atOptions = { 'key' : '9c3b88b0d46206d4e28e3b1c8f49d282', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
-            document.write('<scr' + 'ipt type="text/javascript" src="http' + (location.protocol === 'https:' ? 's' : '') + '://www.profitabledisplaynetwork.com/9c3b88b0d46206d4e28e3b1c8f49d282/invoke.js"></scr' + 'ipt>');
-        </script>
-    </div>
-
     <div class="stream-info" style="text-align: right; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--border);">
-        <h2 style="margin: 0 0 10px 0; font-size: 18px; color: var(--accent);">${match.teams.home.name} VS ${match.teams.away.name}</h2>
-        <p style="font-size: 13px; margin: 0; opacity: 0.7;">بث مباشر لـ ${match.league.name} بميزة حماية المشاهد من الإعلانات المنبثقة.</p>
+        <h2 style="margin: 0 0 10px 0; font-size: 18px; color: var(--accent);">${match ? match.teams.home.name + ' VS ' + match.teams.away.name : 'Match Stream'}</h2>
+        <p style="font-size: 13px; margin: 0; opacity: 0.7;">بث مباشر بمحتوى محمي. في حال تعطل البث، يرجى تحديث الصفحة.</p>
         <div style="margin-top: 15px; display: flex; gap: 10px;">
-            <button onclick="window.open('${match.stream_link}', '_blank')" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid var(--border); padding: 8px 15px; border-radius: 8px; font-size: 11px; cursor: pointer; flex: 1;">فتح في نافذة جديدة</button>
+            <button onclick="window.open('${streamUrl}', '_blank')" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid var(--border); padding: 8px 15px; border-radius: 8px; font-size: 11px; cursor: pointer; flex: 1;">فتح في نافذة جديدة</button>
             <button onclick="document.getElementById('match-modal').style.display='none'" style="background: var(--primary); color: #000; border: none; padding: 8px 15px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer; flex: 1;">إغلاق المشغل</button>
         </div>
     </div>
   `;
+}
+
+// V19.5: Manual Link Observer
+function setupManualStreamListener() {
+  if (typeof firebase === 'undefined' || !firebase.firestore) return;
+  
+  firebase.firestore().collection("live_streams").onSnapshot(snapshot => {
+    STATE.streamLinks = {};
+    snapshot.forEach(doc => {
+      STATE.streamLinks[doc.id] = doc.data().streamUrl;
+    });
+    console.log(`[V19.5] Synced ${snapshot.size} manual stream links.`);
+    
+    // Refresh UI if we already have matches
+    if (STATE.allMatches.length > 0) {
+      renderMatches(STATE.allMatches);
+    }
+  });
 }
 
 // ============================================
