@@ -297,6 +297,7 @@ async function fetchMatches(forcedDocId = null) {
           console.log(`[Real-time] Synced ${STATE.allMatches.length} matches for ${docId}`);
           hideLoading();
           renderMatches(STATE.allMatches);
+          setupManualStreamListener();
         } else {
           console.warn(`[Firestore] Document ${docId} missing, clearing view.`);
           STATE.allMatches = [];
@@ -2028,19 +2029,33 @@ function showUpdateModal(newVer) {
 function setupManualStreamListener() {
   if (typeof firebase === 'undefined' || !firebase.firestore) return;
   
-  // SECURE PATH: live_links
-  firebase.firestore().collection("live_links").onSnapshot(snapshot => {
+  if (STATE._unsubscribeLiveLinks) {
+     STATE._unsubscribeLiveLinks();
+     STATE._unsubscribeLiveLinks = null;
+  }
+  
+  const docId = formatDateAPI(STATE.currentDate || new Date());
+  STATE._unsubscribeLiveLinks = firebase.firestore().collection("matches").doc(docId).collection("live_links").onSnapshot(snapshot => {
     STATE.manualLinks = {};
     snapshot.forEach(doc => {
       STATE.manualLinks[doc.id] = doc.data().url;
     });
-    console.log(`[V19.5 Receiver] Synced ${snapshot.size} manual matches.`);
+    console.log(`[V19.5 Receiver] Synced ${snapshot.size} manual matches for ${docId}.`);
     
     // Auto-refresh cards to show buttons immediately
-    if (STATE.allMatches.length > 0) {
+    if (STATE.allMatches && STATE.allMatches.length > 0) {
       renderMatches(STATE.allMatches);
     }
   });
+}
+
+function _activateIframeFallback(videoEl, url) {
+    if (!videoEl) return;
+    const parent = videoEl.parentElement;
+    if (parent) {
+        parent.innerHTML = `<iframe src="${url}" allowfullscreen allow="autoplay; encrypted-media" frameborder="0" style="width:100%; height:100%; border:none; border-radius:15px; background:#000;" referrerpolicy="no-referrer"></iframe>`;
+        console.warn("[Player] Activated safe iframe fallback layout.");
+    }
 }
 
 // V19.5: STRICT HLS PLAYER INTEGRATION (FORCED CONFIG & RECOVERY)
@@ -2071,7 +2086,8 @@ function playLiveStream(matchId, playerId = 'main-player') {
    const video = document.getElementById(playerId);
    if (!video) return;
 
-   db.collection("live_links").doc(String(matchId)).get().then((doc) => {
+   const docId = formatDateAPI(STATE.currentDate || new Date());
+   db.collection("matches").doc(docId).collection("live_links").doc(String(matchId)).get().then((doc) => {
        if (doc.exists && doc.data().url) {
            const hlsUrl = doc.data().url;
            

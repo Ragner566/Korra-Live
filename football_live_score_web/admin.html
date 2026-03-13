@@ -341,8 +341,8 @@
                     return;
                 }
 
-                // Get current links from 'live_links' path/collection
-                const linksSnap = await db.collection("live_links").get();
+                // Get current links from the exact date path/collection
+                const linksSnap = await db.collection("matches").doc(today).collection("live_links").get();
                 const linksMap = {};
                 linksSnap.forEach(d => linksMap[d.id] = d.data().url);
 
@@ -379,13 +379,15 @@
         }
 
         async function saveLiveLink(id) {
+            const today = new Date().toISOString().split('T')[0];
             const url = document.getElementById(`input-${id}`).value;
             try {
-                await db.collection("live_links").doc(String(id)).set({
+                // Strict path: matches/YYYY-MM-DD/live_links/matchId
+                await db.collection("matches").doc(today).collection("live_links").doc(String(id)).set({
                     url: url,
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                alert("✅ تم تفعيل الرابط بنجاح!");
+                alert("✅ تم تفعيل الرابط بنجاح في المسار الصحيح!");
                 refreshLiveLinks();
             } catch(e) {
                 alert("❌ خطأ: " + e.message);
