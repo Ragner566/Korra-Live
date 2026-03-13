@@ -19,6 +19,7 @@ let STATE = {
   currentDate: new Date(),
   currentLeague: "all",
   currentPage: "matches",
+  allMatchesCache: {}, // V21.1: Multi-day memory
   allMatches: [],
   manualLinks: {}, // V19.5: STRICT MANUAL LINKS (from live_links)
   refreshTimer: null,
@@ -213,7 +214,16 @@ async function selectMatchDay(day, btn) {
     day = 'today';
   }
 
-  await fetchMatches(null);
+  // Turbo Reload: Instantly pull from cache, no spinners
+  const docId = formatDateAPI(STATE.currentDate);
+  if (STATE.allMatchesCache && STATE.allMatchesCache[docId]) {
+    STATE.allMatches = STATE.allMatchesCache[docId];
+    hideLoading();
+    renderMatches(STATE.allMatches);
+    setupManualStreamListener();
+  } else {
+    await fetchMatches(null);
+  }
 }
 
 // Delegation for Match Cards & Navigation (V14.0 Fix)
@@ -256,6 +266,34 @@ async function fetchMatches(forcedDocId = null) {
   const clickTime = Date.now();
   if (STATE._lastFetch && (clickTime - STATE._lastFetch < 500) && !forcedDocId) return;
   STATE._lastFetch = clickTime;
+
+  // Turbo Reload: Pre-fetch all 3 days safely in background
+  if (!forcedDocId && Object.keys(STATE.allMatchesCache).length === 0) {
+      const offsets = [-1, 0, 1];
+      const now = new Date();
+      offsets.forEach(offset => {
+          const d = new Date(now.getTime() + offset * 86400000);
+          const cacheDocId = formatDateAPI(d);
+          
+          if (typeof firebase !== 'undefined' && firebase.firestore) {
+             firebase.firestore().collection("matches").doc(cacheDocId).onSnapshot(docSnap => {
+                if (docSnap.exists) {
+                   STATE.allMatchesCache[cacheDocId] = docSnap.data().events || [];
+                   localStorage.setItem(`matches_${cacheDocId}`, JSON.stringify(STATE.allMatchesCache[cacheDocId]));
+                   
+                   // Render immediately if it's the active view
+                   if (cacheDocId === formatDateAPI(STATE.currentDate)) {
+                      STATE.allMatches = STATE.allMatchesCache[cacheDocId];
+                      hideLoading();
+                      renderMatches(STATE.allMatches);
+                      setupManualStreamListener();
+                   }
+                }
+             });
+          }
+      });
+      return; 
+  }
 
   const dateStr = formatDateAPI(STATE.currentDate);
   let docId = dateStr;
@@ -416,14 +454,28 @@ async function fetchMatchesDirect(dateStr) {
 
 
 async function fetchMatchDetailsServer(fixtureId) {
-  // Try to find if this specific match needs fresh data from Firestore (Server source)
-  if (typeof firebase !== 'undefined' && firebase.firestore) {
-    try {
-      console.log(`[Firestore] Fetching fresh details for match ${fixtureId} from SERVER...`);
-      // Note: Full incidents/stats would normally be in a separate collection or doc
-      // For this implementation, we try the API fallback if Firestore doesn't have deep details
-    } catch(e) {}
-  }
+  // Football-Data.org API fetch for timeline
+  try {
+    const keyToUse = STATE.apiKey ? STATE.apiKey.trim() : CONFIG.FALLBACK_API_KEY;
+    const res = await fetch(`https://api.football-data.org/v4/matches/${fixtureId}`, {
+         headers: { "X-Auth-Token": keyToUse }
+    });
+    if (res.ok) {
+       const data = await res.json();
+       const events = [];
+       if(data.goals) data.goals.forEach(g => { events.push({...g, type: 'GOAL', time: g.minute, detailText: g.scorer?.name || ''}); });
+       if(data.substitutions) data.substitutions.forEach(s => { events.push({...s, type: 'SUBSTITUTION', time: s.minute, detailText: s.playerIn?.name || '', subText: `↑ ${s.playerIn?.name || ''} ↓ ${s.playerOut?.name || ''}`}); });
+       if(data.bookings) data.bookings.forEach(b => { 
+           events.push({...b, type: b.card === 'RED_CARD' ? 'RED_CARD' : 'YELLOW_CARD', time: b.minute, detailText: b.player?.name || '' }); 
+       });
+       return { 
+           events: events, 
+           statistics: data.statistics || [], 
+           lineups: data.lineups || { home: {}, away: {} },
+           match: null
+       };
+    }
+  } catch(e) { console.warn("Direct fetch Match failed", e); }
   return await fetchMatchDetails(fixtureId);
 }
 
@@ -787,6 +839,11 @@ async function openMatchDetail(fixtureId) {
        </div>
     </div>
     ` : ''}
+    <div id="ad-under-player" style="margin-top: 15px; text-align: center; background: rgba(255,255,255,0.02); border-radius: 12px; padding: 10px;">
+       <div style="font-size: 10px; opacity: 0.5;">إعلان</div>
+       <!-- Adsterra Under Player Box -->
+       <script async="async" data-cfasync="false" src="//pl2561234.jads.com/5c9d2f2/"></script>
+    </div>
   `;
 
   // Fetch details - FORCE SERVER to bypass cache
@@ -2479,44 +2536,32 @@ async function loadLiveTV() {
   `;
 
   try {
-    // Try Firestore first (pre-populated by fetch-scores.js)
-    if (typeof firebase !== 'undefined' && firebase.firestore) {
-      const doc = await firebase.firestore().collection('live_tv').doc('channels').get();
-      if (doc.exists && doc.data().channels?.length > 0) {
-        _renderChannels(doc.data().channels, grid, countEl);
-        _liveTVLoaded = true;
-        return;
-      }
+    // 1. Fetch JSON file generated locally by backend script (Zero CORS)
+    const res = await fetch('/channels_data.json');
+    if (!res.ok) throw new Error("Failed to load local channels data");
+    const data = await res.json();
+    
+    if (data && data.channels) {
+       _renderChannels(data.channels.slice(0, 50), grid, countEl);
+       _liveTVLoaded = true;
+       return;
     }
-
-    // Fallback: Fetch directly from iptv-org
-    console.log('[LiveTV] Firestore empty, fetching from iptv-org directly...');
-    const res = await fetch('https://iptv-org.github.io/iptv/languages/ara.m3u', {
-      headers: { 'Referrer-Policy': 'no-referrer' }
-    });
-    const text = await res.text();
-    const lines = text.split('\n');
-    const channels = [];
-    const sportKeywords = ['sport', 'bein', 'sky', 'ssc', 'kass', 'mbc sport', 'abu dhabi sport', 'dazn', 'canal'];
-
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('#EXTINF')) {
-        const nameMatch = lines[i].match(/tvg-name="([^"]+)"/i) || lines[i].match(/,(.+)$/);
-        const logoMatch = lines[i].match(/tvg-logo="([^"]+)"/i);
-        const rawUrl = lines[i + 1]?.trim();
-        if (nameMatch && rawUrl && rawUrl.startsWith('http')) {
-          const name = (nameMatch[1] || '').trim();
-          if (sportKeywords.some(kw => name.toLowerCase().includes(kw))) {
-            channels.push({ name, url: rawUrl, logo: logoMatch?.[1] || null });
-          }
-        }
-      }
-    }
-
-    _renderChannels(channels.slice(0, 50), grid, countEl);
-    _liveTVLoaded = true;
-
   } catch (e) {
+    console.warn("[LiveTV] Local channels fetch failed, trying Firestore...", e);
+    // 2. Fallback to Firestore
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      try {
+        const doc = await firebase.firestore().collection('live_tv').doc('channels').get();
+        if (doc.exists && doc.data().channels?.length > 0) {
+          _renderChannels(doc.data().channels.slice(0, 50), grid, countEl);
+          _liveTVLoaded = true;
+          return;
+        }
+      } catch (e2) {
+         console.warn("[LiveTV] Firestore fallback failed:", e2);
+      }
+    }
+    
     grid.innerHTML = `
       <div style="grid-column:1/-1; text-align:center; padding:30px;">
         <i class="fas fa-exclamation-triangle" style="color:#ff4d4d; font-size:2rem; margin-bottom:10px;"></i>

@@ -2,6 +2,8 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 require('dotenv').config();
 
+const fileSystem = require('fs');
+
 // ============================================================
 // CONFIGURATION
 // ============================================================
@@ -147,12 +149,23 @@ async function saveIPTVChannelsToFirebase() {
   ).slice(0, 60); // Max 60 channels
 
   try {
-    await fs.collection('live_tv').doc('channels').set({
+    const dataObj = {
       channels: sportChannels,
-      lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      lastUpdated: new Date().toISOString(),
       source: 'iptv-org/arabic'
+    };
+    
+    // Save to Firebase (Optional now, but good for backup)
+    await fs.collection('live_tv').doc('channels').set({
+      ...dataObj,
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp()
     });
-    console.log(`[IPTV] Saved ${sportChannels.length} sport channels to Firestore live_tv/channels`);
+    
+    // Write local JSON files for Web Client to bypass CORS fetching IPTV
+    fileSystem.writeFileSync('./football_live_score_web/public/channels_data.json', JSON.stringify(dataObj, null, 2));
+    fileSystem.writeFileSync('./football_live_score_web/channels_data.json', JSON.stringify(dataObj, null, 2));
+    
+    console.log(`[IPTV] Saved ${sportChannels.length} sport channels to Firestore and local channels_data.json`);
   } catch (e) {
     console.error("[IPTV] Failed to save channels:", e.message);
   }
