@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "16.0"
+  VERSION: "17.0"
 };
 
 let STATE = {
@@ -494,28 +494,11 @@ function renderMatches(matches) {
   hideLoading();
 
   let filtered = matches;
-  if (STATE.currentDate.toDateString() === new Date().toDateString()) {
-    const testMatch = {
-      fixture: { 
-        id: 'test-999', 
-        status: { short: 'LIVE', elapsed: 45 }, 
-        date: new Date().toISOString(),
-        live_link: "https://live-hls-web-aje.akamaized.net/hls/live/2036571/aje/index.m3u8" // Stable Al-Jazeera HLS
-      },
-      league: { id: 'test', name: 'بث تجريبي مباشر - Live Test', logo: '/logo.png' },
-      teams: { 
-        home: { name: 'Korra Live TV', logo: '/logo.png' },
-        away: { name: 'Broadcast Test', logo: '/logo.png' }
-      },
-      goals: { home: 1, away: 2 }, match: true
-    };
-    filtered = [testMatch, ...filtered];
-  }
 
   if (STATE.currentLeague !== "all") {
     filtered = filtered.filter((m) => String(m.league.id) === STATE.currentLeague);
   } else {
-    filtered = filtered.filter((m) => m.fixture.id === 'test-999' || CONFIG.SUPPORTED_LEAGUES.includes(String(m.league.id)));
+    filtered = filtered.filter((m) => CONFIG.SUPPORTED_LEAGUES.includes(String(m.league.id)));
   }
 
   const live = filtered.filter((m) => isLive(m.fixture.status.short) || m.fixture.status.short === "IN_PLAY");
@@ -780,7 +763,7 @@ async function openMatchDetail(fixtureId) {
       </div>
     </div>
     ` : ''}
-    ${isFinished(status) ? `
+    ${isFinished(match.fixture.status.short) ? `
     <div id="modal-replays-tab" class="modal-tab-content">
        <div style="padding: 20px; text-align: center;">
          <div class="video-player-placeholder" style="width: 100%; height: 200px; background: #0c111d; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 25px; border: 2px solid var(--accent); position: relative; overflow: hidden; box-shadow: 0 0 20px var(--accent-glow);">
@@ -856,7 +839,7 @@ async function openMatchDetail(fixtureId) {
 
   // Set the lineups logic container logic relies on 'status' being available, which was already defined above
 
-  if (isFinished(status) || isLive(status)) {
+  if (isFinished(match.fixture.status.short) || isLive(match.fixture.status.short)) {
     if (details.lineups && (details.lineups.home?.players || details.lineups.away?.players)) {
       lineupsContainer.innerHTML = renderLineups(details.lineups, match);
     } else {
@@ -1786,17 +1769,18 @@ function openReplayDetail(matchId) {
   showInterstitial();
   openMatchDetail(matchId);
   
-  // V13.0: Fixed links for Replays
-  if (matchId === 'test-999' || matchId.includes('flamengo')) {
-     const link = matchId === 'test-999' ? "https://www.youtube.com/embed/dQw4w9WgXcQ" : "https://www.youtube.com/embed/football_highlights_real"; 
-     console.log("Loading Replay for:", matchId);
-     setTimeout(() => {
-        const videoPlaceholder = document.querySelector('#modal-replays-tab .video-player-placeholder');
-        if (videoPlaceholder) {
-           videoPlaceholder.innerHTML = `<iframe src="${link}" style="width:100%; height:100%; border:none; border-radius:18px;" allowfullscreen></iframe>`;
-        }
-     }, 1000);
-  }
+  setTimeout(() => {
+    const videoPlaceholder = document.querySelector('#modal-replays-tab .video-player-placeholder');
+    if (videoPlaceholder) {
+       // Real Replay Logic or Placeholder
+       videoPlaceholder.innerHTML = `
+          <div style="width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#0c111d;">
+            <i class="fas fa-video-slash fa-3x" style="opacity:0.3; margin-bottom:15px; color:var(--text-secondary);"></i>
+            <p style="color:var(--text-secondary); font-size:14px;">الملخص سيتوفر قريباً بعد رفع حقوق البث</p>
+          </div>
+       `;
+    }
+  }, 1000);
 
   // Auto-switch to Replay tab if match is finished
   setTimeout(() => {
@@ -2025,6 +2009,68 @@ function showUpdateModal(newVer) {
     </div>
   `;
   document.body.appendChild(modal);
+}
+
+// ============================================
+// V17.0: INTERSTITIAL AD SYSTEM (Every 5 clicks)
+// ============================================
+let _interstitialClickCount = 0;
+
+function showInterstitial() {
+  _interstitialClickCount++;
+  console.log(`[Ad] Click count: ${_interstitialClickCount}`);
+  if (_interstitialClickCount % 5 !== 0) return; // Show every 5 clicks only
+  
+  // Remove existing
+  const existing = document.getElementById('interstitial-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'interstitial-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center; backdrop-filter:blur(10px);';
+
+  // Auto-close countdown 5 seconds
+  let countdown = 5;
+  overlay.innerHTML = `
+    <div style="position:relative; width:100%; max-width:380px; background:var(--bg-secondary,#0c111d); border-radius:20px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
+      <div style="padding:12px 20px; background:rgba(0,255,163,0.05); display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.05);">
+        <span style="font-size:11px; opacity:0.5;">AD</span>
+        <button id="interstitial-close" style="background:transparent; border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:6px; padding:4px 12px; cursor:pointer; font-size:12px;">إغلاق (<span id="ad-countdown">${countdown}</span>)</button>
+      </div>
+      <!-- Adsterra Native Ad Placeholder -->
+      <div id="adsterra-interstitial-zone" style="min-height:250px; display:flex; align-items:center; justify-content:center; padding:20px;">
+        <div style="text-align:center; opacity:0.4;">
+          <i class="fas fa-ad fa-3x" style="margin-bottom:12px;"></i>
+          <p style="font-size:12px;">جاري تحميل الإعلان...</p>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Load Adsterra interstitial script (Zone: 9245984 - Korra Live)
+  const adScript = document.createElement('script');
+  adScript.setAttribute('data-zone', '9245984');
+  adScript.src = 'https://inklinkor.com/tag.min.js';
+  adScript.setAttribute('data-cfasync', 'false');
+  document.getElementById('adsterra-interstitial-zone').appendChild(adScript);
+
+  // Countdown timer
+  const countdownEl = document.getElementById('ad-countdown');
+  const timer = setInterval(() => {
+    countdown--;
+    if (countdownEl) countdownEl.textContent = countdown;
+    if (countdown <= 0) {
+      clearInterval(timer);
+      overlay.remove();
+    }
+  }, 1000);
+
+  // Manual close button
+  setTimeout(() => {
+    const closeBtn = document.getElementById('interstitial-close');
+    if (closeBtn) closeBtn.onclick = () => { clearInterval(timer); overlay.remove(); };
+  }, 100);
 }
 
 window.addEventListener('appinstalled', () => {
