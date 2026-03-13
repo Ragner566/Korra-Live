@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "14.1"
+  VERSION: "15.0"
 };
 
 let STATE = {
@@ -1873,8 +1873,8 @@ function initApp() {
   // V14.1: Monitor upcoming matches for auto-start
   setInterval(() => monitorMatchStarts(), 30000);
 
-  // Hide Splash Screen after initial load
-  setTimeout(() => hideSplashScreen(), 2500);
+  // Hide Splash Screen after initial load (V15: 3 seconds)
+  setTimeout(() => hideSplashScreen(), 3000);
 
   // Check for maintenance mode
   if (typeof firebase !== 'undefined' && firebase.firestore) {
@@ -1989,15 +1989,20 @@ async function checkForUpdates() {
 }
 
 function showUpdateModal(newVer) {
+  // Clear any existing modal
+  const old = document.getElementById('force-update-modal');
+  if (old) old.remove();
+
   const modal = document.createElement('div');
-  modal.id = 'update-modal';
-  modal.style = "position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:99999; display:flex; align-items:center; justify-content:center; padding:20px;";
+  modal.id = 'force-update-modal';
+  modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:999999; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(20px);";
+  
   modal.innerHTML = `
-    <div style="background:var(--bg-secondary); padding:40px; border-radius:24px; border:1px solid var(--accent); text-align:center; max-width:400px; box-shadow:0 0 50px var(--accent-glow);">
+    <div style="background:var(--bg-secondary); padding:40px; border-radius:30px; text-align:center; max-width:400px; border:1px solid var(--accent);">
       <i class="fas fa-cloud-download-alt fa-4x" style="color:var(--accent); margin-bottom:20px;"></i>
-      <h2 style="margin-bottom:15px;">يتوفر تحديث جديد (${newVer})</h2>
-      <p style="color:var(--text-secondary); margin-bottom:30px;">يرجى التحديث الآن للحصول على أحدث إصلاحات البث والمميزات الجديدة.</p>
-      <button onclick="location.reload()" style="background:var(--accent); color:#000; font-weight:800; padding:15px 40px; border-radius:12px; border:none; cursor:pointer; width:100%;">تحديث الآن</button>
+      <h2 style="color:#fff; margin-bottom:15px;">تحديث إجباري متوفر V${newVer}</h2>
+      <p style="color:var(--text-secondary); margin-bottom:25px;">يجب تحديث البرنامج الآن لتجنب انقطاع البث ومشاكل العرض في النسخة الجديدة.</p>
+      <button onclick="window.location.reload(true)" style="background:var(--accent); color:#000; border:none; padding:15px 30px; border-radius:12px; font-weight:800; cursor:pointer; width:100%;">تحديث الآن</button>
     </div>
   `;
   document.body.appendChild(modal);

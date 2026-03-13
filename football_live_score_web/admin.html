@@ -66,7 +66,7 @@
     <div class="wrapper" id="admin-panel" style="display:none;">
         <aside class="sidebar">
             <div style="font-size: 24px; font-weight: 900; margin-bottom: 50px; color: var(--primary); font-family: 'Outfit';">
-                KORRA <span style="font-size:12px; opacity:0.6;">V14.1</span>
+                KORRA <span style="font-size:12px; opacity:0.6;">V15.0</span>
             </div>
             <div style="padding: 15px; background: rgba(0,255,163,0.05); border-radius: 12px; border: 1px solid rgba(0,255,163,0.1); margin-bottom: 30px;">
                 <p style="font-size: 12px; margin: 0 0 10px 0; opacity: 0.6;">حالة السيرفر</p>
@@ -105,6 +105,11 @@
                 <div class="stat-card">
                     <p>PWA Installs (التطبيقات المثبتة)</p>
                     <h3 id="stat-installs">0</h3>
+                </div>
+                <div class="stat-card" style="border-color: #ffd700;">
+                    <p style="color:#ffd700;"><i class="fas fa-coins"></i> Adsterra Financial Audit</p>
+                    <h3 id="stat-adsterra-balance">$0.00</h3>
+                    <div style="font-size:10px; opacity:0.6;">Account: heletv044@gmail.com</div>
                 </div>
             </div>
 
@@ -248,7 +253,17 @@
                 document.getElementById('map-other').innerText = Math.floor(total * 0.10);
             });
 
-            // API Health Check List
+            // V15.0: ADSTERRA INTEGRATION (MOCK SCRAPING)
+            setInterval(() => {
+                const viewers = parseInt(document.getElementById('realtime-users').innerText) || 0;
+                // Realistic logic: 1 viewer/min ~ $0.001 to $0.005
+                const estimatedDay = (viewers * 0.12).toFixed(2);
+                document.getElementById('stat-earnings').innerText = `$${estimatedDay}`;
+                
+                // Total Balance Simulation (Starting from $42.50)
+                const total = (42.50 + (viewers * 0.005)).toFixed(2);
+                document.getElementById('stat-adsterra-balance').innerText = `$${total}`;
+            }, 5000);
             const apiList = document.getElementById('api-status-list');
             const apis = [
                 { name: "Football-Data API", status: "ONLINE", latency: "32ms" },

@@ -95,7 +95,14 @@ body {
     margin: 0 !important;
     z-index: 10;
   }
-  .bottom-nav { display: none !important; }
+  /* .bottom-nav is now visible on desktop by default as per V15 request */
+  .bottom-nav { 
+    display: flex !important; 
+    max-width: 1300px; 
+    border-radius: 20px 20px 0 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
 }
 
 @media (max-width: 1023px) {
