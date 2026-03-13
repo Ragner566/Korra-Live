@@ -63,19 +63,11 @@
     </style>
   </head>
   <body>
-    <!-- Splash Screen (V14.1) -->
-    <div id="splash-screen" class="splash-overlay">
-      <div class="splash-content">
-        <img src="/logo.png" alt="Korra Live" class="splash-logo">
-        <div class="splash-loader"></div>
-        <p class="splash-text">KORRA LIVE</p>
-      </div>
-    </div>
     <!-- App Bar -->
     <header class="app-bar" id="app-bar">
       <div class="logo">
         <img src="/logo.png" class="logo-icon" alt="Korra Live Logo" style="width:32px; height:32px; border-radius: 8px; margin-left: 8px;" />
-        <span>Korra Live <span class="sync-badge">V15.5 - Pro Edition</span></span>
+        <span>Korra Live <span class="sync-badge">V16.0</span></span>
       </div>
       <div class="actions">
         <button class="icon-btn" onclick="openInstallWizard()" title="Download App" style="color:var(--accent); border-color:var(--accent);">
@@ -356,12 +348,12 @@
       }
     </script>
 
-    <script src="app_v5.js?v=15.5"></script>
+    <script src="app_v5.js?v=16.0"></script>
     <script>
       // Desktop Trigger alert for Update
-      if (!localStorage.getItem('v15_5_alerted')) {
-         alert('تم تحديث النظام للنسخة 15.5.. يرجى الضغط على Ctrl+F5');
-         localStorage.setItem('v15_5_alerted', 'true');
+      if (!localStorage.getItem('v16_0_alerted')) {
+         alert('تم تحديث النظام للنسخة V16.0.. يرجى الضغط على Ctrl+F5 لتفعيل الأرباح والتعديلات الجديدة');
+         localStorage.setItem('v16_0_alerted', 'true');
       }
 
       // PropellerAds Integration (Dynamic Zone)

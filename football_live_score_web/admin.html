@@ -224,20 +224,22 @@
                 }
             });
 
-            // V14.1: REAL-TIME USERS from RTDB (Absolute)
-            rdb.ref('presence_total').on('value', snap => {
-                const count = snap.val() || 0;
-                document.getElementById('realtime-users').innerText = count;
-            });
+            // V16.0: REAL-TIME USERS from RTDB directly using `presence` size instead of broken transactions
+            // Removed raw presence_total listener avoiding out-of-sync behavior.
 
-            // DEVICE SEGMENTATION
+            // DEVICE SEGMENTATION (and now serving as master counter)
             rdb.ref('presence').on('value', snap => {
                 let m = 0, d = 0;
+                let activeCount = 0;
                 snap.forEach(child => {
                     const user = child.val();
+                    activeCount++;
                     if (user.device === 'Mobile') m++;
                     else if (user.device === 'Desktop') d++;
                 });
+
+                document.getElementById('realtime-users').innerText = activeCount;
+                
                 const total = (m + d) || 1;
                 
                 // Update Table
@@ -247,7 +249,7 @@
                 document.getElementById('table-bar-desktop').style.width = (d / total * 100) + '%';
 
                 // Geography
-                document.getElementById('map-egypt').innerText = Math.floor(total * 0.42);
+                document.getElementById('map-egypt').innerText = Math.floor(activeCount * 0.42);
                 document.getElementById('map-ksa').innerText = Math.floor(total * 0.28);
                 document.getElementById('map-maghreb').innerText = Math.floor(total * 0.20);
                 document.getElementById('map-other').innerText = Math.floor(total * 0.10);

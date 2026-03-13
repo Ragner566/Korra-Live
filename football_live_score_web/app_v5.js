@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "15.5"
+  VERSION: "16.0"
 };
 
 let STATE = {
@@ -1873,13 +1873,23 @@ function initApp() {
   // V14.1: Monitor upcoming matches for auto-start
   setInterval(() => monitorMatchStarts(), 30000);
 
-  // Hide Splash Screen after initial load (V15.5: strictly 3 seconds)
-  window.addEventListener('load', () => {
-    setTimeout(hideSplashScreen, 3000);
-  });
-  // Fallback in case window was already loaded
-  if (document.readyState === 'complete') {
-    setTimeout(hideSplashScreen, 3000);
+  // V16.0: Conditional Splash Screen for PWA / Desktop App Only
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone || window.navigator.userAgent.includes('Electron');
+  if (isStandalone) {
+     const splashHtml = `
+       <div id="splash-screen" class="splash-overlay" style="opacity: 1; transition: opacity 0.8s;">
+         <div class="splash-content">
+           <img src="/logo.png" alt="Korra Live" class="splash-logo">
+           <div class="splash-loader"></div>
+           <p class="splash-text">KORRA LIVE V16.0</p>
+         </div>
+       </div>
+     `;
+     document.body.insertAdjacentHTML('afterbegin', splashHtml);
+     setTimeout(hideSplashScreen, 3000);
+  } else {
+     // Web Browser mode - completely skip Splash Screen.
+     hideSplashScreen();
   }
 
   // Check for maintenance mode
@@ -1927,12 +1937,6 @@ function trackRealtimeActiveUser() {
           device: isMobile ? 'Mobile' : 'Desktop',
           id: Math.random().toString(36).substr(2, 5)
         });
-        
-        // Use a transaction for the global counter
-        totalRef.transaction(current => (current || 0) + 1);
-        myPresenceRef.onDisconnect().remove(() => {
-           totalRef.transaction(current => (current || 0) - 1);
-        });
       }
     });
   } catch(e) { console.error("RTDB Presence failed:", e); }
@@ -1950,10 +1954,19 @@ async function watchGlobalVersion() {
   try {
     const res = await fetch('/version.json?t=' + Date.now());
     const data = await res.json();
+    console.log(`[Version Watcher] Local: ${CONFIG.VERSION} | Server: ${data.latestVersion}`);
+    
     if (data.latestVersion && parseFloat(data.latestVersion) > parseFloat(CONFIG.VERSION)) {
+       console.warn("CRITICAL UPDATE FOUND! Forcing update modal.");
+       // Primitive Fallback Alert
+       alert(`يتوفر تحديث إجباري للنسخة ${data.latestVersion}. يرجى الضغط على زر التحديث أو Ctrl+F5`);
        showUpdateModal(data.latestVersion);
+    } else {
+       console.log("[Version Watcher] System is up to date.");
     }
-  } catch(e) {}
+  } catch(e) {
+       console.error("[Version Watcher] Failed to fetch version data:", e);
+  }
 }
 
 function monitorMatchStarts() {
