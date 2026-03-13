@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "18.0"
+  VERSION: "19.0"
 };
 
 let STATE = {
@@ -636,13 +636,21 @@ function matchCardHTML(match, type) {
     syncRealtimeViewers(fixture.id);
   }
 
-  const footerBtn = type === "finished" ? `
+  const streamBtn = match.stream_link ? `
+    <div class="match-card-footer" style="border-top:1px solid var(--border); padding-top:10px; margin-top:10px;">
+       <button class="btn-primary live-btn-pulse" onclick="event.stopPropagation(); openLiveStream('${fixture.id}')" style="width:100%; background:linear-gradient(135deg,#00ffa3,#00d4ff); color:#000; font-weight:900; border:none; border-radius:10px; padding:10px; cursor:pointer; font-size:12px;">
+         <i class="fas fa-play"></i> ⚡ شاهد البث المباشر الآن
+       </button>
+    </div>
+  ` : (type === "finished" ? `
     <div class="match-card-footer" style="border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; text-align: center;">
        <button class="btn-play-replay" onclick="event.stopPropagation(); openReplayDetail('${fixture.id}')" style="min-width: 150px; font-size: 11px; padding: 6px 12px;">
          <i class="fas fa-play-circle"></i> ${STATE.currentLang === 'ar' ? 'مشاهدة الأهداف والإعادة' : 'Watch Replays & Goals'}
        </button>
     </div>
-  ` : '';
+  ` : '');
+
+  const footerBtn = streamBtn;
 
   return `
     <div class="match-card ${type === "live" ? "live" : ""}" data-id="${fixture.id}">
@@ -2012,6 +2020,52 @@ function showUpdateModal(newVer) {
     </div>
   `;
   document.body.appendChild(modal);
+}
+
+// ============================================
+// V19.0: LIVE STREAM PLAYER (Sandboxed)
+// ============================================
+function openLiveStream(matchId) {
+  const match = STATE.allMatches.find(m => String(m.fixture.id) === String(matchId));
+  if (!match || !match.stream_link) {
+      alert("⚠️ عذراً، لم يتوفر رابط البث لهذه المباراة بعد.");
+      return;
+  }
+  
+  const modal = document.getElementById("match-modal");
+  const modalBody = document.getElementById("modal-body");
+  const modalLeagueName = document.getElementById("modal-league-name");
+
+  modalLeagueName.textContent = "بث مباشر - LIVE STREAM";
+  modal.style.display = "flex";
+  
+  // Custom design for Streaming Player
+  modalBody.innerHTML = `
+    <div style="background: #000; border-radius: 15px; overflow: hidden; position: relative; aspect-ratio: 16/9; margin-bottom: 20px;">
+        <iframe src="${match.stream_link}" 
+                style="width:100%; height:100%; border:none;" 
+                sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+                allowfullscreen></iframe>
+        <div style="position: absolute; top: 10px; right: 10px; background: rgba(0,255,163,0.8); color: #000; padding: 4px 10px; border-radius: 6px; font-weight: 900; font-size: 10px; animation: pulse 1s infinite;">LIVE</div>
+    </div>
+    
+    <!-- Adsterra Small Banner for Player -->
+    <div style="margin: 10px 0; text-align: center;">
+        <script type="text/javascript">
+            atOptions = { 'key' : '9c3b88b0d46206d4e28e3b1c8f49d282', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
+            document.write('<scr' + 'ipt type="text/javascript" src="http' + (location.protocol === 'https:' ? 's' : '') + '://www.profitabledisplaynetwork.com/9c3b88b0d46206d4e28e3b1c8f49d282/invoke.js"></scr' + 'ipt>');
+        </script>
+    </div>
+
+    <div class="stream-info" style="text-align: right; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--border);">
+        <h2 style="margin: 0 0 10px 0; font-size: 18px; color: var(--accent);">${match.teams.home.name} VS ${match.teams.away.name}</h2>
+        <p style="font-size: 13px; margin: 0; opacity: 0.7;">بث مباشر لـ ${match.league.name} بميزة حماية المشاهد من الإعلانات المنبثقة.</p>
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <button onclick="window.open('${match.stream_link}', '_blank')" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid var(--border); padding: 8px 15px; border-radius: 8px; font-size: 11px; cursor: pointer; flex: 1;">فتح في نافذة جديدة</button>
+            <button onclick="document.getElementById('match-modal').style.display='none'" style="background: var(--primary); color: #000; border: none; padding: 8px 15px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer; flex: 1;">إغلاق المشغل</button>
+        </div>
+    </div>
+  `;
 }
 
 // ============================================
