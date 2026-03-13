@@ -174,19 +174,12 @@
         }
 
         function initDashboard() {
+            // Real-time Analytics from Firestore
             db.collection("analytics").doc("global").onSnapshot(doc => {
                 if (doc.exists) {
                     const data = doc.data();
                     document.getElementById('stat-visits').innerText = data.totalVisits || 0;
                     document.getElementById('stat-earnings').innerText = `$${((data.adClicks || 0) * 0.05).toFixed(2)}`;
-                    
-                    const m = data.mobile || 0;
-                    const d = data.desktop || 0;
-                    const total = (m + d) || 1;
-                    document.getElementById('val-mobile').innerText = m;
-                    document.getElementById('val-desktop').innerText = d;
-                    document.getElementById('bar-mobile').style.width = (m / total * 100) + '%';
-                    document.getElementById('bar-desktop').style.width = (d / total * 100) + '%';
                 }
             });
 
@@ -196,15 +189,29 @@
                 }
             });
 
-            // Simulated Heatmap based on visits
-            setInterval(() => {
-                const total = parseInt(document.getElementById('stat-visits').innerText) || 500;
-                document.getElementById('map-egypt').innerText = Math.floor(total * 0.42);
-                document.getElementById('map-ksa').innerText = Math.floor(total * 0.28);
-                document.getElementById('map-maghreb').innerText = Math.floor(total * 0.20);
-                document.getElementById('map-other').innerText = Math.floor(total * 0.10);
-                document.getElementById('realtime-users').innerText = Math.floor(Math.random() * 40 + 10);
-            }, 5000);
+            // V13.0: REAL-TIME USERS from RTDB (No Simulation)
+            const rdb = firebase.database();
+            rdb.ref('realtime/active_users_count').on('value', snap => {
+                document.getElementById('realtime-users').innerText = snap.val() || 0;
+            });
+
+            // DEVICE SEGMENTATION from RTDB Active list (Accurate)
+            rdb.ref('realtime/active_users_list').on('value', snap => {
+                let m = 0, d = 0;
+                snap.forEach(child => {
+                    if (child.val().device === 'Mobile') m++;
+                    else d++;
+                });
+                const total = (m + d) || 1;
+                document.getElementById('val-mobile').innerText = m;
+                document.getElementById('val-desktop').innerText = d;
+                document.getElementById('bar-mobile').style.width = (m / total * 100) + '%';
+                document.getElementById('bar-desktop').style.width = (d / total * 100) + '%';
+                
+                // Heatmap logic (Still simulated for regions as geo-ip needs backend, but based on real total)
+                document.getElementById('map-egypt').innerText = Math.floor((m+d) * 0.42);
+                document.getElementById('map-ksa').innerText = Math.floor((m+d) * 0.28);
+            });
 
             // API Health Check List
             const apiList = document.getElementById('api-status-list');
