@@ -215,22 +215,38 @@ async function selectMatchDay(day, btn) {
   await fetchMatches(null);
 }
 
-// Delegation for Match Cards & Navigation
+// Delegation for Match Cards & Navigation (V14.0 Fix)
 document.addEventListener('click', function(e) {
-  // Navigation tabs
-  if (e.target.closest('.match-tab')) {
-    const btn = e.target.closest('.match-tab');
-    const day = btn.dataset.day;
-    selectMatchDay(day, btn);
+  // Navigation tabs (Today/Yesterday/Tomorrow)
+  const tabBtn = e.target.closest('.match-tab');
+  if (tabBtn) {
+    const day = tabBtn.dataset.day;
+    selectMatchDay(day, tabBtn);
     return;
+  }
+
+  // League Filter Chips
+  const leagueBtn = e.target.closest('.league-chip');
+  if (leagueBtn) {
+    const leagueId = leagueBtn.dataset.league;
+    filterByLeague(leagueId, leagueBtn);
+    return;
+  }
+
+  // Bottom Navigation Items
+  const navItem = e.target.closest('.nav-item');
+  if (navItem && navItem.hasAttribute('onclick')) {
+     // Let the inline onclick or page logic handle it, 
+     // but ensure we don't block
   }
 
   // Match Cards
   const card = e.target.closest('.match-card');
   if (card && card.dataset.id) {
     const matchId = card.dataset.id;
+    console.log(`[Interaction] Opening Match: ${matchId}`);
     if (typeof showInterstitial === 'function') showInterstitial();
-    openMatchDetail(matchId); // Pass as string
+    openMatchDetail(matchId);
   }
 });
 
@@ -854,31 +870,30 @@ async function openMatchDetail(fixtureId) {
     lineupsContainer.innerHTML = `<p style="text-align:center;color:var(--text-secondary);padding:30px;font-weight:700">${msg}</p>`;
   }
 
-  // V13.1: Auto-switch to streaming tab for Test Match or specific live requests
+  // V14.0: Initialize Player if Test Match (Manual Fix)
   if (fixtureId === 'test-999') {
+    console.log("[V14.0] Initializing Real HLS Player for Test Match");
     setTimeout(() => {
       const liveTabBtn = document.querySelector('button[onclick*="streaming-tab"]');
       if (liveTabBtn) switchModalTab('streaming-tab', liveTabBtn);
       
-      // Initialize Player
-      if (typeof Hls !== 'undefined') {
-        const video = document.getElementById('live-player');
-        const hlsSource = match.fixture.live_link;
-        if (video) {
-          if (Hls.isSupported()) {
-            const hls = new Hls();
-            hls.loadSource(hlsSource);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
-          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = hlsSource;
-            video.play();
-          }
+      const video = document.getElementById('live-player');
+      const hlsSource = match.fixture.live_link || "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+      
+      if (video) {
+        if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+          const hls = new Hls();
+          hls.loadSource(hlsSource);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+             video.play().catch(e => console.log("Autoplay blocked, user interaction needed"));
+          });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = hlsSource;
+          video.play().catch(e => console.log("Autoplay blocked"));
         }
       }
-    }, 100);
-  } else if (isLiveMatch && typeof Hls !== 'undefined') {
-     // Normal live matches initialize placeholder or player if link exists
+    }, 300);
   }
 }
 
@@ -1845,14 +1860,14 @@ function initApp() {
   fetchMatches();
   setupLiveMatchesListener();
 
-  // 4. Analytics & Real-time Tracking (V13.0)
+  // 4. Analytics & Real-time Tracking (V14.0 Absolute)
   logVisit();
   logDeviceType();
   trackRealtimeActiveUser();
   
   setInterval(() => {
     if (document.visibilityState === 'visible') fetchMatches();
-  }, 60000);
+  }, 120000);
 
   // Check for maintenance mode
   if (typeof firebase !== 'undefined' && firebase.firestore) {
@@ -1881,27 +1896,31 @@ function logDeviceType() {
   });
 }
 
-// V13.0: Real-time User Tracking Logic
+// V14.0: Real-time User Tracking Logic (Improved)
 function trackRealtimeActiveUser() {
   if (typeof firebase === 'undefined' || !firebase.database) return;
-  const rdb = firebase.database();
-  const presenceRef = rdb.ref('realtime/active_users_list').push();
-  
-  // Add session
-  presenceRef.set({
-    last_active: firebase.database.ServerValue.TIMESTAMP,
-    device: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop'
-  });
-  
-  // Remove on disconnect
-  presenceRef.onDisconnect().remove();
-  
-  // Global counter
-  const counterRef = rdb.ref('realtime/active_users_count');
-  counterRef.transaction(current => (current || 0) + 1);
-  presenceRef.onDisconnect().remove(() => {
-     counterRef.transaction(current => (current || 0) - 1);
-  });
+  try {
+    const rdb = firebase.database();
+    const presenceRef = rdb.ref('presence/' + Math.random().toString(36).substr(2, 9));
+    
+    // Set device property
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    presenceRef.set({
+      last_active: firebase.database.ServerValue.TIMESTAMP,
+      device: isMobile ? 'Mobile' : 'Desktop',
+      platform: 'Web/PWA'
+    });
+    
+    // Remove on disconnect
+    presenceRef.onDisconnect().remove();
+    
+    // Also update legacy counters if needed
+    const countRef = rdb.ref('presence_total');
+    countRef.transaction(current => (current || 0) + 1);
+    presenceRef.onDisconnect().remove(() => {
+       countRef.transaction(current => (current || 0) - 1);
+    });
+  } catch(e) { console.error("RTDB Presence failed:", e); }
 }
 
 function syncRealtimeViewers(matchId) {

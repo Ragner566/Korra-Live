@@ -40,7 +40,7 @@ html {
   background-color: var(--bg-main);
 }
 
-/* V13.1: Golden Grid & Interaction Fix */
+/* V14.0: Manual Audit - Absolute Repair & Grid Fix */
 body {
   background-color: var(--bg-main);
   color: var(--text-primary);
@@ -50,67 +50,73 @@ body {
   margin: 0 auto;
   min-height: 100vh;
   position: relative;
-  box-shadow: 0 0 100px rgba(0, 0, 0, 0.5);
-  background-image: 
-    radial-gradient(circle at 0% 0%, rgba(0, 255, 163, 0.05) 0%, transparent 40%),
-    radial-gradient(circle at 100% 100%, rgba(112, 0, 255, 0.05) 0%, transparent 40%);
   overflow-x: hidden;
 }
 
 @media (min-width: 1024px) {
   body {
     max-width: 100%;
-    background-image: none;
+    background: var(--bg-main);
     padding: 0;
   }
   .app-bar {
-    width: 100%;
-    max-width: 1200px;
+    max-width: 1300px;
     margin: 0 auto;
-    left: 0;
-    right: 0;
-    border-radius: 0 0 20px 20px;
+    border-radius: 0 0 24px 24px;
+    left: 0; right: 0;
   }
   .content {
-    display: grid;
-    grid-template-columns: 280px 1fr 280px;
-    gap: 25px;
-    max-width: 1200px;
-    margin: 30px auto;
+    display: grid !important;
+    grid-template-columns: 280px minmax(600px, 800px) 280px !important;
+    grid-template-areas: "leagues feed ads" !important;
+    gap: 30px;
+    max-width: 1300px;
+    margin: 40px auto;
     padding: 0 20px;
+    justify-content: center;
     align-items: start;
-    pointer-events: auto;
+    pointer-events: auto !important;
   }
-  .league-filter-section {
-    grid-column: 1;
-    position: sticky;
-    top: 100px;
+  .league-filter-section { 
+    grid-area: leagues; 
+    position: sticky; 
+    top: 100px; 
     z-index: 10;
   }
-  .main-feed {
-    grid-column: 2;
-    min-width: 600px;
+  .main-feed { 
+    grid-area: feed; 
+    z-index: 5;
   }
-  .ad-container-top { display: none; } /* Hide mobile-style top ads */
   #ad-top { 
-    display: block !important; 
-    grid-column: 3;
-    position: sticky;
+    grid-area: ads; 
+    display: block !important;
+    position: sticky; 
     top: 100px;
     margin: 0 !important;
+    z-index: 10;
   }
   .bottom-nav { display: none !important; }
 }
 
 @media (max-width: 1023px) {
-  .content { display: block; padding-bottom: 80px; }
+  .content { display: block; padding: 0 10px 100px; }
   .main-feed { width: 100%; }
 }
 
-/* Fix for dead clicks: ensure sections don't overlap */
-.section { position: relative; z-index: 1; pointer-events: auto; }
-.modal-overlay { z-index: 10000 !important; }
-.install-wizard { z-index: 10001 !important; }
+/* Interaction Integrity Fix (V14.0) */
+* { pointer-events: auto; }
+.modal-overlay, .install-wizard { 
+   pointer-events: auto; 
+}
+.modal-overlay:not([style*="display: none"]), 
+.install-wizard:not([style*="display: none"]) {
+   backdrop-filter: blur(15px);
+}
+.section, .match-card, .league-chip, .match-tab, .nav-item {
+  cursor: pointer;
+  position: relative;
+  z-index: 10;
+}
 
 .league-chips {
   scrollbar-width: none;

@@ -334,13 +334,14 @@
         storageBucket: "korra-b5d32.firebasestorage.app",
         messagingSenderId: "583177780653",
         appId: "1:583177780653:web:c58e3e45742b72695d3524",
-        measurementId: "G-C2KSH4DYY6"
+        measurementId: "G-C2KSH4DYY6",
+        databaseURL: "https://korra-b5d32-default-rtdb.firebaseio.com"
       };
       // Initialize Firebase
       try {
         if (!firebase.apps.length) {
           firebase.initializeApp(firebaseConfig);
-          console.log("Korra Firebase Initialized");
+          console.log("Korra Firebase Initialized (V14.0)");
         }
       } catch(e) {
         console.error("Firebase init failed:", e);

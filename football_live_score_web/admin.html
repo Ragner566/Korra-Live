@@ -219,18 +219,18 @@
                 }
             });
 
-            // V13.1: REAL-TIME USERS from RTDB
-            rdb.ref('realtime/active_users_count').on('value', snap => {
+            // V14.0: REAL-TIME USERS from RTDB (Presence Path)
+            rdb.ref('presence_total').on('value', snap => {
                 document.getElementById('realtime-users').innerText = snap.val() || 0;
             });
 
             // DEVICE SEGMENTATION (Table Fix)
-            rdb.ref('realtime/active_users_list').on('value', snap => {
+            rdb.ref('presence').on('value', snap => {
                 let m = 0, d = 0;
                 snap.forEach(child => {
                     const user = child.val();
                     if (user.device === 'Mobile') m++;
-                    else d++;
+                    else if (user.device === 'Desktop') d++;
                 });
                 const total = (m + d) || 1;
                 
@@ -239,12 +239,6 @@
                 document.getElementById('table-val-desktop').innerText = d;
                 document.getElementById('table-bar-mobile').style.width = (m / total * 100) + '%';
                 document.getElementById('table-bar-desktop').style.width = (d / total * 100) + '%';
-                
-                // Update Visualization (Bars also for redundancy)
-                if (document.getElementById('bar-mobile')) document.getElementById('bar-mobile').style.width = (m / total * 100) + '%';
-                if (document.getElementById('bar-desktop')) document.getElementById('bar-desktop').style.width = (d / total * 100) + '%';
-                if (document.getElementById('val-mobile')) document.getElementById('val-mobile').innerText = m;
-                if (document.getElementById('val-desktop')) document.getElementById('val-desktop').innerText = d;
 
                 // Geography
                 document.getElementById('map-egypt').innerText = Math.floor(total * 0.42);
