@@ -192,41 +192,67 @@ async function fetchMatchesForRange(dateFrom, dateTo) {
     ).slice(0, 6);
 
     for (let i = 0; i < importantMatches.length; i++) {
-      const m = importantMatches[i];
-      const details = await fetchMatchDetails(m.id);
-      if (details === "LIMIT") break;
-      if (details) {
-        m.detailsFetched = true;
-        m.lineups = details.lineups || null;
-        m.statistics = details.statistics || [];
-        m.goals_events = details.goals || [];
+      try {
+        const m = importantMatches[i];
+        const details = await fetchMatchDetails(m.id);
+        if (details === "LIMIT") break;
+        if (details) {
+          m.detailsFetched = true;
+          m.lineups = details.lineups || null;
+          m.statistics = details.statistics || [];
+          m.goals_events = details.goals || [];
+        }
+        if (i < importantMatches.length - 1) await new Promise(r => setTimeout(r, 6500));
+      } catch (err) {
+        console.warn(`Error during deep fetch for match ${importantMatches[i]?.id}:`, err?.message);
       }
-      if (i < importantMatches.length - 1) await new Promise(r => setTimeout(r, 6500));
     }
 
-    return matches.map(m => ({
-      fixture: {
-        id: m.id,
-        status: { short: m.status, elapsed: m.minute || null },
-        date: m.utcDate
-      },
-      league: {
-        name: m.competition.name,
-        id: m.competition.code,
-        logo: m.competition.emblem
-      },
-      teams: {
-        home: { name: m.homeTeam.shortName || m.homeTeam.name, id: m.homeTeam.id, logo: m.homeTeam.crest },
-        away: { name: m.awayTeam.shortName || m.awayTeam.name, id: m.awayTeam.id, logo: m.awayTeam.crest }
-      },
-      goals: { home: m.score.fullTime.home, away: m.score.fullTime.away },
-      score: m.score,
-      lineups: m.lineups,
-      statistics: m.statistics,
-      events: m.goals_events,
-      broadcasters: m.odds?.msg || null, // may have broadcaster info
-      source: "football-data.org (enriched)"
-    }));
+    return matches.map(m => {
+      const isFinished = ["FINISHED", "AWARDED"].includes(m.status);
+      let highlightsUrl = null;
+      let fullMatchUrl = null;
+
+      if (isFinished) {
+        const leagueName = m.competition.name || '';
+        const homeName = m.homeTeam.shortName || m.homeTeam.name || '';
+        const awayName = m.awayTeam.shortName || m.awayTeam.name || '';
+        
+        // Auto-generate a YouTube search list embed to present the first video result as the highlight
+        const query = encodeURIComponent(`ملخص مباراة ${homeName} ${awayName} ${leagueName}`.trim());
+        highlightsUrl = `https://www.youtube.com/embed?listType=search&list=${query}`;
+        
+        // Fallback for full match download
+        fullMatchUrl = `https://footballia.eu/search?q=${encodeURIComponent(homeName + ' ' + awayName)}`;
+      }
+
+      return {
+        fixture: {
+          id: m.id,
+          status: { short: m.status, elapsed: m.minute || null },
+          date: m.utcDate
+        },
+        league: {
+          name: m.competition.name,
+          id: m.competition.code,
+          logo: m.competition.emblem
+        },
+        teams: {
+          home: { name: m.homeTeam.shortName || m.homeTeam.name, id: m.homeTeam.id, logo: m.homeTeam.crest },
+          away: { name: m.awayTeam.shortName || m.awayTeam.name, id: m.awayTeam.id, logo: m.awayTeam.crest }
+        },
+        goals: { home: m.score.fullTime.home, away: m.score.fullTime.away },
+        score: m.score,
+        lineups: m.lineups,
+        statistics: m.statistics,
+        events: m.goals_events,
+        broadcasters: m.odds?.msg || null,
+        highlights: highlightsUrl ? { url: highlightsUrl, isFallback: true } : null,
+        fullMatchUrl: fullMatchUrl,
+        source: "football-data.org (enriched)"
+      };
+    });
+
   } catch (e) {
     console.error(`Error fetching matches: ${e.message}`);
     return null;

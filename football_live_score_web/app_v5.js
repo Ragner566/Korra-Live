@@ -254,65 +254,83 @@ document.addEventListener('click', function(e) {
 async function fetchMatches(forcedDocId = null) {
   // Simple Debounce: prevent spamming
   const clickTime = Date.now();
-  if (STATE._lastFetch && (clickTime - STATE._lastFetch < 1000) && !forcedDocId) return;
+  if (STATE._lastFetch && (clickTime - STATE._lastFetch < 500) && !forcedDocId) return;
   STATE._lastFetch = clickTime;
 
   const dateStr = formatDateAPI(STATE.currentDate);
-  const todayDateStr = formatDateAPI(new Date());
-
-  // Logic to determine docId: ALWAYS use the calculated dateStr (e.g. 2026-03-11)
-  // Our sync script writes specifically to date-named documents.
-  // Using aliases like 'today' causes shifts between timezones.
   let docId = dateStr;
   
   console.log(`[Fetch] Priority: ${docId}, Date: ${dateStr}`);
-  
-  showLoading();
   hideError();
 
-  // ── 1. FIRESTORE ONLY (Server backend runs independently) ──────────────────────────────
+  // 1. FAST LOCAL CACHE LOAD (Instant UI)
+  const cachedData = localStorage.getItem(`matches_${docId}`);
+  if (cachedData) {
+    try {
+      const parsedMatches = JSON.parse(cachedData);
+      if (parsedMatches && parsedMatches.length > 0) {
+        STATE.allMatches = parsedMatches;
+        hideLoading();
+        renderMatches(STATE.allMatches);
+        console.log(`[Cache] Instantly loaded ${STATE.allMatches.length} matches for ${docId}`);
+      } else { showLoading(); }
+    } catch (e) { showLoading(); }
+  } else {
+    showLoading();
+  }
+
+  // 2. REALTIME LISTENER (Background Sync & Firestore Update)
   if (typeof firebase !== 'undefined' && firebase.firestore) {
     try {
       const fs = firebase.firestore();
-      // ALWAYS try to fetch the explicit date doc from SERVER to avoid cache shift
-      const docSnap = await fs.collection("matches").doc(docId).get({ source: 'server' });
       
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        STATE.allMatches = data.events || [];
-        console.log(`[Firestore] Successfully loaded ${STATE.allMatches.length} matches for ${docId}`);
-      } else {
-        console.warn(`[Firestore] Document ${docId} missing on server, trying fallbacks...`);
-        // Fallback to today/tomorrow/yesterday labels IF the date doc is missing
-        const labels = ["today", "yesterday", "tomorrow"];
-        let dataFound = false;
-        for (const label of labels) {
-            const lDoc = await fs.collection("matches").doc(label).get();
-            if (lDoc.exists && lDoc.data().date === dateStr) {
-                STATE.allMatches = lDoc.data().events || [];
-                dataFound = true;
-                break;
-            }
-        }
-        if (!dataFound) STATE.allMatches = [];
+      if (STATE._unsubscribeMatches) {
+        STATE._unsubscribeMatches();
+        STATE._unsubscribeMatches = null;
       }
       
-      hideLoading();
-      renderMatches(STATE.allMatches);
-      
-      // Setup real-time listener for current view
-      setupLiveMatchesListener();
+      STATE._unsubscribeMatches = fs.collection("matches").doc(docId).onSnapshot(docSnap => {
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          STATE.allMatches = data.events || [];
+          localStorage.setItem(`matches_${docId}`, JSON.stringify(STATE.allMatches));
+          console.log(`[Real-time] Synced ${STATE.allMatches.length} matches for ${docId}`);
+          hideLoading();
+          renderMatches(STATE.allMatches);
+        } else {
+          console.warn(`[Firestore] Document ${docId} missing, clearing view.`);
+          STATE.allMatches = [];
+          localStorage.removeItem(`matches_${docId}`);
+          hideLoading();
+          // Also try fallbacks if the document is completely empty
+          fs.collection("matches").doc("today").get().then(lDoc => {
+             if (lDoc.exists && lDoc.data().date === dateStr) {
+                STATE.allMatches = lDoc.data().events || [];
+                renderMatches(STATE.allMatches);
+             } else {
+                renderMatches([]);
+             }
+          });
+        }
+      }, err => {
+        console.error(`[Real-time] Listener failed for ${docId}:`, err);
+        if (!cachedData) showError("\u062a\u0639\u0630\u0631 \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u062d\u064a\u0629.");
+        hideLoading();
+      });
       return;
     } catch(e) {
-      console.error("[Firestore] Read error:", e.message);
-      showError("تعذر تحميل البيانات من قاعدة البيانات.");
+      console.error("[Firestore] Sync error:", e.message);
+      if (!cachedData) showError("\u062e\u0637\u0623 \u0641\u064a \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0642\u0627\u0639\u062f\u0629 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a.");
+      hideLoading();
       return;
     }
   } else {
-    showError("قاعدة البيانات غير متصلة.");
+    if (!cachedData) showError("\u0642\u0627\u0639\u062f\u0629 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u063a\u064a\u0631 \u0645\u062a\u0635\u0644\u0629.");
+    hideLoading();
     return;
   }
 }
+
 
 // Shows a soft banner instead of a hard error
 function showQuotaMessage(msg) {
@@ -393,47 +411,8 @@ async function fetchMatchesDirect(dateStr) {
   }
 }
 
-// Realtime DB updates listener
-let liveDbListenerRef = null;
-let liveDbCallback = null;
+// (Legacy setupLiveMatchesListener merged into fetchMatches)
 
-function setupLiveMatchesListener() {
-  if (typeof firebase === 'undefined' || !firebase.firestore) return;
-
-  // Unsubscribe from previous listener if exists
-  if (STATE._unsubscribeMatches) {
-    STATE._unsubscribeMatches();
-    STATE._unsubscribeMatches = null;
-  }
-
-  const dateStr = formatDateAPI(STATE.currentDate);
-  const todayDateStr = formatDateAPI(new Date());
-  
-  // Always use the absolute date string for stability
-  let docId = dateStr;
-
-  console.log(`[Firestore] Setting up Real-time Listener for: ${docId}`);
-  
-  const fs = firebase.firestore();
-  STATE._unsubscribeMatches = fs.collection("matches").doc(docId).onSnapshot(docSnap => {
-    if (docSnap.exists) {
-      const data = docSnap.data();
-      const newMatches = data.events || [];
-      
-      // Update state and UI
-      STATE.allMatches = newMatches;
-      console.log(`[Real-time] Received update for ${docId}: ${newMatches.length} matches. Last update: ${data.lastUpdated?.toDate().toLocaleTimeString() || 'N/A'}`);
-      
-      // Only render if not loading
-      const loading = document.getElementById("loading-container");
-      if (loading && loading.style.display === "none") {
-        renderMatches(STATE.allMatches);
-      }
-    }
-  }, err => {
-    console.error(`[Real-time] Listener failed for ${docId}:`, err);
-  });
-}
 
 async function fetchMatchDetailsServer(fixtureId) {
   // Try to find if this specific match needs fresh data from Firestore (Server source)
@@ -773,21 +752,36 @@ async function openMatchDetail(fixtureId) {
     ${isFinished(match.fixture.status.short) ? `
     <div id="modal-replays-tab" class="modal-tab-content">
        <div style="padding: 20px; text-align: center;">
-         <div class="video-player-placeholder" style="width: 100%; height: 200px; background: #0c111d; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 25px; border: 2px solid var(--accent); position: relative; overflow: hidden; box-shadow: 0 0 20px var(--accent-glow);">
-           <i class="fas fa-play fa-3x" style="color: var(--accent);"></i>
-           <div style="position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 5px; font-size: 11px;">12:45</div>
+         ${match.highlights?.url ? `
+         <div class="video-player-placeholder" style="width: 100%; background: #000; border-radius: 20px; margin-bottom: 25px; border: 2px solid var(--accent); position: relative; overflow: hidden; box-shadow: 0 0 20px var(--accent-glow); aspect-ratio: 16/9;">
+           <iframe src="${match.highlights.url}" allowfullscreen allow="autoplay; encrypted-media" style="width: 100%; height: 100%; border: none;"></iframe>
          </div>
          <h3 style="margin-bottom:10px;">مشاهدة ملخص المباراة</h3>
          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:20px;">الأهداف كاملة واللقطات المثيرة بجودة HD</p>
-         
+         ` : `
+         <div class="video-player-placeholder" style="width: 100%; height: 200px; background: #0c111d; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 25px; border: 2px solid var(--accent); position: relative; overflow: hidden; box-shadow: 0 0 20px var(--accent-glow);">
+           <i class="fas fa-play fa-3x" style="color: var(--accent);"></i>
+           <div style="position: absolute; bottom: 15px; right: 15px; background: rgba(0,0,0,0.7); padding: 5px 10px; border-radius: 5px; font-size: 11px;">قريباً</div>
+         </div>
+         <h3 style="margin-bottom:10px;">الملخص سيتوفر قريباً</h3>
+         `}
+
          <div style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 15px; border: 1px solid var(--border);">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:15px;">
                <span style="font-weight:700;">تحميل بصيغة MP4</span>
-               <span class="vip-badge">PREMIUM</span>
+               <span class="vip-badge" style="background: var(--accent); color: #000;">مجاناً للمشتركين مسجلين الدخول</span>
             </div>
-            <button class="btn-play-replay" style="margin:0; width:100%;" onclick="openVIPDownload()">
-              <i class="fas fa-download"></i> تحميل المباراة كاملة (4GB)
+            ${match.fullMatchUrl ? `
+            <a href="${match.fullMatchUrl}" target="_blank" style="text-decoration:none; display:block;">
+              <button class="btn-play-replay" style="margin:0; width:100%;">
+                <i class="fas fa-download"></i> تحميل المباراة كاملة
+              </button>
+            </a>
+            ` : `
+            <button class="btn-play-replay" style="margin:0; width:100%; opacity: 0.5;" disabled>
+              <i class="fas fa-clock"></i> جاري تجهيز رابط التحميل
             </button>
+            `}
          </div>
        </div>
     </div>

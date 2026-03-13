@@ -113,6 +113,31 @@
                 </div>
             </div>
 
+            <!-- V19.5 MANUAL STREAM MANAGEMENT (STRICT USER REQUEST) -->
+            <div style="background: #000; border: 2px solid #00ffa3; border-radius: 15px; padding: 25px; margin-bottom: 30px; box-shadow: 0 0 20px rgba(0,255,163,0.1);">
+                <h2 style="color: #00ffa3; margin-bottom: 20px; font-family: 'Tajawal'; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-video"></i> إدارة بث المباريات الحية
+                </h2>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; color: #fff; text-align: right;">
+                        <thead style="border-bottom: 1px solid rgba(0,255,163,0.3);">
+                            <tr>
+                                <th style="padding: 12px;">المباراة (Match)</th>
+                                <th style="padding: 12px;">رابط البث (Stream URL)</th>
+                                <th style="padding: 12px;">الإجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody id="live-links-table">
+                            <!-- Live matches will be injected here -->
+                            <tr>
+                                <td colspan="3" style="text-align: center; padding: 20px; opacity: 0.5;">جاري تحميل مباريات اليوم...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <button onclick="refreshLiveLinks()" style="margin-top: 15px; background: transparent; border: 1px solid #00ffa3; color: #00ffa3; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-size: 12px;">تحديث القائمة</button>
+            </div>
+
             <div style="display:grid; grid-template-columns: 2fr 1fr; gap:30px;">
                 <div class="heatmap-container">
                     <h2><i class="fas fa-globe-africa"></i> خريطة المشاهدات (Live Heatmap)</h2>
@@ -286,8 +311,8 @@
             fetchAdsterraStats();
             setInterval(fetchAdsterraStats, 60000);
 
-            refreshMatchLinks();
-            setInterval(refreshMatchLinks, 300000); // refresh every 5 mins
+            refreshLiveLinks();
+            setInterval(refreshLiveLinks, 300000); // refresh every 5 mins
 
             const apiList = document.getElementById('api-status-list');
             const apis = [
@@ -303,76 +328,76 @@
             `).join('');
         }
 
-        // V19.5: STREAM MANAGEMENT LOGIC (Global Scope - Dedicated Collection)
-        async function refreshMatchLinks() {
+        // V19.5: STRICT MANUAL STREAM MANAGEMENT LOGIC
+        async function refreshLiveLinks() {
             const today = new Date().toISOString().split('T')[0];
-            const doc = await db.collection("matches").doc(today).get();
-            const container = document.getElementById("stream-management-list");
-            
-            if (!doc.exists || !doc.data().events) {
-                container.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding:30px; opacity:0.5;">لا توجد مباريات لليوم.</div>`;
-                return;
-            }
-
-            // Fetch existing links from dedicated collection
-            const streamLinksSnap = await db.collection("live_streams").get();
-            const linksMap = {};
-            streamLinksSnap.forEach(d => linksMap[d.id] = d.data().streamUrl);
-
-            const matches = doc.data().events;
-            // User requested LIVE matches only
-            const liveOnly = matches.filter(m => ["1H", "2H", "HT", "LIVE"].includes(m.fixture.status.short));
-            
-            if (liveOnly.length === 0) {
-                container.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding:30px; opacity:0.5;">لا توجد مباريات جارية حالياً (LIVE).</div>`;
-                return;
-            }
-
-            container.innerHTML = liveOnly.map(m => `
-                <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:15px; padding:20px; display:flex; flex-direction:column; gap:15px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-size:12px; color:var(--primary); font-weight:800;">${m.league.name}</span>
-                        <span class="status-badge badge-online">${m.fixture.status.short}</span>
-                    </div>
-                    <div style="display:flex; justify-content:center; align-items:center; gap:10px; font-weight:700;">
-                        <span>${m.teams.home.name}</span>
-                        <span>VS</span>
-                        <span>${m.teams.away.name}</span>
-                    </div>
-                    <div>
-                        <p style="font-size:11px; opacity:0.6; margin-bottom:8px;">رابط البث (matches/${m.fixture.id}/streamUrl):</p>
-                        <input type="text" id="stream-link-${m.fixture.id}" value="${linksMap[m.fixture.id] || ''}" placeholder="أدخل الرابط هنا..." style="width:100%; background:rgba(0,0,0,0.3); border:1px solid var(--border); padding:10px; border-radius:8px; color:#fff; font-size:12px;">
-                    </div>
-                    <button onclick="saveStreamLink('${m.fixture.id}')" style="background:var(--primary); color:#000; border:none; padding:10px; border-radius:8px; font-weight:800; cursor:pointer; transition:0.3s; width:100%;">حفظ الرابط</button>
-                    ${linksMap[m.fixture.id] ? `<button onclick="deleteStreamLink('${m.fixture.id}')" style="background:rgba(255,50,50,0.2); color:#ff4d4d; border:1px solid rgba(255,50,50,0.3); padding:8px; border-radius:8px; font-size:11px; cursor:pointer;">حذف الرابط</button>` : ''}
-                </div>
-            `).join('');
-        }
-
-        async function saveStreamLink(fixtureId) {
-            const url = document.getElementById(`stream-link-${fixtureId}`).value;
-            if (!url) return alert("يرجى إدخال رابط أولاً!");
+            const container = document.getElementById("live-links-table");
             
             try {
-                await db.collection("live_streams").doc(String(fixtureId)).set({
-                    streamUrl: url,
+                // Get matches from our central matches doc
+                const doc = await db.collection("matches").doc(today).get();
+                if (!doc.exists) {
+                    container.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px;">لا توجد مباريات لليوم.</td></tr>';
+                    return;
+                }
+
+                // Get current links from 'live_links' path/collection
+                const linksSnap = await db.collection("live_links").get();
+                const linksMap = {};
+                linksSnap.forEach(d => linksMap[d.id] = d.data().url);
+
+                const matches = doc.data().events || [];
+                // V19.5: User requested ALL matches for today to set links in advance
+                const targetMatches = matches; 
+
+                if (targetMatches.length === 0) {
+                    container.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px;">لا توجد مباريات مسجلة لليوم.</td></tr>';
+                    return;
+                }
+
+                container.innerHTML = targetMatches.map(m => `
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <td style="padding: 12px;">
+                            <div style="font-weight:700;">${m.teams.home.name} vs ${m.teams.away.name}</div>
+                            <div style="font-size:10px; opacity:0.5;">${m.league.name} (${m.fixture.status.short})</div>
+                        </td>
+                        <td style="padding: 12px;">
+                            <input type="text" id="input-${m.fixture.id}" value="${linksMap[m.fixture.id] || ''}" 
+                                placeholder="ضع رابط البث هنا..." 
+                                style="width: 100%; background: #111; border: 1px solid #333; color: #fff; padding: 10px; border-radius: 5px;">
+                        </td>
+                        <td style="padding: 12px;">
+                            <button onclick="saveLiveLink('${m.fixture.id}')" 
+                                style="background: #00ffa3; color: #000; border: none; padding: 8px 15px; border-radius: 5px; font-weight: 800; cursor: pointer;">حفظ الرابط</button>
+                        </td>
+                    </tr>
+                `).join('');
+
+            } catch(e) {
+                container.innerHTML = `<tr><td colspan="3" style="text-align:center; color:red;">خطأ: ${e.message}</td></tr>`;
+            }
+        }
+
+        async function saveLiveLink(id) {
+            const url = document.getElementById(`input-${id}`).value;
+            try {
+                await db.collection("live_links").doc(String(id)).set({
+                    url: url,
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                alert("✅ تم تفعيل البث بنجاح!");
-                refreshMatchLinks();
-            } catch(err) {
-                alert("❌ خطأ: " + err.message);
+                alert("✅ تم تفعيل الرابط بنجاح!");
+                refreshLiveLinks();
+            } catch(e) {
+                alert("❌ خطأ: " + e.message);
             }
         }
 
-        async function deleteStreamLink(fixtureId) {
-            if (!confirm("هل أنت متأكد من حذف الرابط؟")) return;
-            try {
-                await db.collection("live_streams").doc(String(fixtureId)).delete();
-                alert("🗑️ تم حذف الرابط.");
-                refreshMatchLinks();
-            } catch(err) { alert("❌ خطأ: " + err.message); }
-        }
+        // Auto-refresh when dashboard starts
+        const originalInit = initDashboard;
+        initDashboard = function() {
+            originalInit();
+            refreshLiveLinks();
+        };
     </script>
 </body>
 </html>
