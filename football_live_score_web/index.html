@@ -66,9 +66,12 @@
     <header class="app-bar" id="app-bar">
       <div class="logo">
         <img src="/logo.png" class="logo-icon" alt="Korra Live Logo" style="width:32px; height:32px; border-radius: 8px; margin-left: 8px;" />
-        <span>Korra Live <span class="sync-badge">V11.1</span></span>
+        <span>Korra Live <span class="sync-badge">V12.2</span></span>
       </div>
       <div class="actions">
+        <button class="icon-btn" onclick="openInstallWizard()" title="Download App" style="color:var(--accent); border-color:var(--accent);">
+          <i class="fas fa-download"></i>
+        </button>
         <button id="lang-switcher" class="icon-btn" onclick="toggleLanguage()">
           EN
         </button>
@@ -362,5 +365,29 @@
         });
       });
     </script>
+
+    <!-- PWA Install Wizard (V12.0) -->
+    <div class="modal-overlay" id="install-wizard" style="display:none; z-index: 9999;">
+      <div class="modal-content" style="max-width: 400px; text-align: center; padding: 30px;">
+        <div style="margin-bottom: 20px;">
+          <img src="/logo.png" style="width: 80px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,255,163,0.3);" />
+        </div>
+        <h2 style="color: var(--accent); margin-bottom: 15px;">تثبيت تطبيق كورة لايف</h2>
+        <p style="font-size: 14px; opacity: 0.8; margin-bottom: 25px;">استمتع بتجربة بث أسرع بدون إعلانات منبثقة عند تشغيل التطبيق من الشاشة الرئيسية.</p>
+        
+        <div class="install-steps" style="text-align: right; background: rgba(255,255,255,0.03); padding: 20px; border-radius: 15px; margin-bottom: 25px; border: 1px solid var(--border);">
+           <div style="margin-bottom: 15px;">
+             <strong>لأجهزة أندرويد:</strong><br/>
+             <span style="font-size: 12px; opacity:0.7;">1. اضغط على قائمة المتصفح (⋮)<br/>2. اختر "تثبيت التطبيق" أو "إضافة إلى الشاشة الرئيسية".</span>
+           </div>
+           <div>
+             <strong>لأجهزة آيفون (Safari):</strong><br/>
+             <span style="font-size: 12px; opacity:0.7;">1. اضغط على زر المشاركة (Share)<br/>2. مرر للأسفل واختر "Add to Home Screen".</span>
+           </div>
+        </div>
+
+        <button class="btn-quality active" style="width: 100%; margin-bottom: 10px;" onclick="closeInstallWizard()">تم، فهمت!</button>
+      </div>
+    </div>
   </body>
 </html>

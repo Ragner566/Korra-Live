@@ -555,3 +555,34 @@ body {
   color: #000;
   border-color: transparent;
 }
+
+/* V12.0 Live Pulse */
+@keyframes live-pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 255, 163, 0.4); }
+  70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(0, 255, 163, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 255, 163, 0); }
+}
+
+.live-pulse {
+  animation: live-pulse 2s infinite;
+  border-color: var(--accent) !important;
+}
+
+/* Standalone / PWA Full Screen */
+@media (display-mode: standalone) {
+  .app-bar { padding-top: 40px; }
+  body { max-width: 100% !important; height: 100vh; }
+}
+
+.install-steps div {
+  position: relative;
+  padding-right: 25px;
+}
+
+.install-steps div::before {
+  content: '✓';
+  position: absolute;
+  right: 0;
+  color: var(--accent);
+  font-weight: bold;
+}
