@@ -1,6 +1,6 @@
 {
-  "latestVersion": "17.0",
+  "latestVersion": "18.0",
   "critical": true,
-  "message": "V17.0: حذف مباريات الاختبار، نظام إعلانات Adsterra حقيقي، إصلاح الإعادة، داشبورد محدّث",
+  "message": "V18.0: نظام إعلانات ذكي مع Fallback + كاشف البث المسبق قبل 30 دقيقة + إصلاح الداشبورد",
   "desktopUrl": "https://korra-b5d32.web.app"
 }

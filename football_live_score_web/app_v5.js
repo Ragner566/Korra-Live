@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "17.0"
+  VERSION: "18.0"
 };
 
 let STATE = {
@@ -1857,6 +1857,9 @@ function initApp() {
   // V14.1: Monitor upcoming matches for auto-start
   setInterval(() => monitorMatchStarts(), 30000);
 
+  // V18.0: Start pre-match stream checker (badges for upcoming)
+  startLiveStreamPreChecker();
+
   // V16.0: Conditional Splash Screen for PWA / Desktop App Only
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone || window.navigator.userAgent.includes('Electron');
   if (isStandalone) {
@@ -2012,65 +2015,115 @@ function showUpdateModal(newVer) {
 }
 
 // ============================================
-// V17.0: INTERSTITIAL AD SYSTEM (Every 5 clicks)
+// V18.0: INTERSTITIAL AD SYSTEM (Every 5 clicks) - FIXED
 // ============================================
 let _interstitialClickCount = 0;
 
 function showInterstitial() {
   _interstitialClickCount++;
   console.log(`[Ad] Click count: ${_interstitialClickCount}`);
-  if (_interstitialClickCount % 5 !== 0) return; // Show every 5 clicks only
+  if (_interstitialClickCount % 5 !== 0) return;
   
-  // Remove existing
   const existing = document.getElementById('interstitial-overlay');
   if (existing) existing.remove();
 
+  let countdown = 5;
   const overlay = document.createElement('div');
   overlay.id = 'interstitial-overlay';
-  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center; backdrop-filter:blur(10px);';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:99999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(15px);';
 
-  // Auto-close countdown 5 seconds
-  let countdown = 5;
   overlay.innerHTML = `
-    <div style="position:relative; width:100%; max-width:380px; background:var(--bg-secondary,#0c111d); border-radius:20px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
-      <div style="padding:12px 20px; background:rgba(0,255,163,0.05); display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.05);">
-        <span style="font-size:11px; opacity:0.5;">AD</span>
-        <button id="interstitial-close" style="background:transparent; border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:6px; padding:4px 12px; cursor:pointer; font-size:12px;">إغلاق (<span id="ad-countdown">${countdown}</span>)</button>
+    <div style="width:min(380px,92vw);background:#0d1117;border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);box-shadow:0 25px 60px rgba(0,0,0,0.8);">
+      <div style="padding:10px 16px;background:rgba(0,255,163,0.04);display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.05);">
+        <span style="font-size:10px;letter-spacing:2px;opacity:0.4;color:#fff;">SPONSORED</span>
+        <button id="i-close-btn" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);color:#fff;border-radius:8px;padding:5px 14px;cursor:pointer;font-size:12px;">إغلاق (<span id="ad-countdown">${countdown}</span>)</button>
       </div>
-      <!-- Adsterra Native Ad Placeholder -->
-      <div id="adsterra-interstitial-zone" style="min-height:250px; display:flex; align-items:center; justify-content:center; padding:20px;">
-        <div style="text-align:center; opacity:0.4;">
-          <i class="fas fa-ad fa-3x" style="margin-bottom:12px;"></i>
-          <p style="font-size:12px;">جاري تحميل الإعلان...</p>
+      <div id="ad-content-zone" style="min-height:260px;display:flex;align-items:center;justify-content:center;padding:16px;flex-direction:column;">
+        <div id="ad-loader" style="text-align:center;color:#fff;opacity:0.3;">
+          <div style="width:30px;height:30px;border:3px solid rgba(0,255,163,0.3);border-top-color:#00ffa3;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 10px;"></div>
+          <span style="font-size:11px;">جاري تحميل الإعلان...</span>
+        </div>
+        <div id="ad-zone-container" style="width:100%;display:none;"></div>
+        <div id="ad-fallback" style="display:none;text-align:center;width:100%;">
+          <div style="background:linear-gradient(135deg,#00ffa3,#00d4ff);border-radius:16px;padding:24px;margin-bottom:16px;">
+            <h3 style="color:#000;font-weight:900;margin:0 0 8px;font-size:18px;">حمّل تطبيق كورة لايف</h3>
+            <p style="color:rgba(0,0,0,0.7);margin:0;font-size:13px;">شاهد المباريات بجودة HD • إشعارات فورية</p>
+          </div>
+          <button onclick="openInstallWizard();document.getElementById('interstitial-overlay').remove();" style="background:linear-gradient(135deg,#00ffa3,#00d4ff);color:#000;border:none;padding:12px 28px;border-radius:10px;font-weight:900;cursor:pointer;width:100%;font-size:14px;">جرب التطبيق مجاناً ✌️</button>
         </div>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
 
-  // Load Adsterra interstitial script (Zone: 9245984 - Korra Live)
-  const adScript = document.createElement('script');
-  adScript.setAttribute('data-zone', '9245984');
-  adScript.src = 'https://inklinkor.com/tag.min.js';
-  adScript.setAttribute('data-cfasync', 'false');
-  document.getElementById('adsterra-interstitial-zone').appendChild(adScript);
+  // Try loading PropellerAds (already approved for this domain - zone 8852329)
+  setTimeout(() => {
+    try {
+      const zoneContainer = document.getElementById('ad-zone-container');
+      const s = document.createElement('script');
+      s.setAttribute('data-zone', '8852329');
+      s.src = 'https://inklinkor.com/tag.min.js';
+      s.async = true;
+      zoneContainer.appendChild(s);
+      zoneContainer.style.display = 'block';
 
-  // Countdown timer
-  const countdownEl = document.getElementById('ad-countdown');
+      // After 3 seconds check if any real ad content appeared
+      setTimeout(() => {
+        const hasAd = zoneContainer.querySelectorAll('iframe,ins,img').length > 0;
+        if (!hasAd) {
+          document.getElementById('ad-loader').style.display = 'none';
+          document.getElementById('ad-zone-container').style.display = 'none';
+          document.getElementById('ad-fallback').style.display = 'block';
+        } else {
+          document.getElementById('ad-loader').style.display = 'none';
+        }
+      }, 3000);
+    } catch (e) {
+      document.getElementById('ad-loader').style.display = 'none';
+      document.getElementById('ad-fallback').style.display = 'block';
+    }
+  }, 200);
+
+  // Countdown auto-close
+  const cdEl = document.getElementById('ad-countdown');
   const timer = setInterval(() => {
     countdown--;
-    if (countdownEl) countdownEl.textContent = countdown;
-    if (countdown <= 0) {
-      clearInterval(timer);
-      overlay.remove();
-    }
+    if (cdEl) cdEl.textContent = countdown;
+    if (countdown <= 0) { clearInterval(timer); overlay.remove(); }
   }, 1000);
 
-  // Manual close button
+  // Manual close
   setTimeout(() => {
-    const closeBtn = document.getElementById('interstitial-close');
-    if (closeBtn) closeBtn.onclick = () => { clearInterval(timer); overlay.remove(); };
+    const btn = document.getElementById('i-close-btn');
+    if (btn) btn.onclick = () => { clearInterval(timer); overlay.remove(); };
   }, 100);
+}
+
+// ============================================
+// V18.0: SMART LIVE STREAM PRE-CHECKER
+// Tags match cards 30 mins before kickoff
+// ============================================
+function startLiveStreamPreChecker() {
+  setInterval(() => {
+    const now = new Date();
+    STATE.allMatches.forEach(m => {
+      if (!['NS', 'TBD', 'TIMED'].includes(m.fixture.status.short)) return;
+      const kickoff = new Date(m.fixture.date);
+      const minsLeft = (kickoff - now) / 60000;
+      if (minsLeft < 0 || minsLeft > 35) return;
+
+      const card = document.querySelector(`[data-fixture-id="${m.fixture.id}"]`);
+      if (card && !card.querySelector('.stream-soon-badge')) {
+        const badge = document.createElement('span');
+        badge.className = 'stream-soon-badge';
+        badge.style.cssText = 'position:absolute;top:8px;left:8px;background:linear-gradient(135deg,#ff416c,#ff4b2b);color:#fff;font-size:9px;font-weight:900;padding:3px 7px;border-radius:6px;z-index:5;letter-spacing:0.5px;';
+        badge.textContent = '⚡ بث قريباً';
+        card.style.position = 'relative';
+        card.appendChild(badge);
+        console.log(`[StreamChecker] Match ${m.teams.home.name} vs ${m.teams.away.name} starts in ${Math.floor(minsLeft)} mins`);
+      }
+    });
+  }, 60000);
 }
 
 window.addEventListener('appinstalled', () => {
