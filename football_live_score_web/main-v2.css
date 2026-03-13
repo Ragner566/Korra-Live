@@ -60,17 +60,17 @@ body {
     padding: 0;
   }
   .app-bar {
-    max-width: 1300px;
+    max-width: 1200px;
     margin: 0 auto;
     border-radius: 0 0 24px 24px;
     left: 0; right: 0;
   }
   .content {
     display: grid !important;
-    grid-template-columns: 280px minmax(600px, 800px) 280px !important;
+    grid-template-columns: 250px minmax(500px, 650px) 250px !important;
     grid-template-areas: "leagues feed ads" !important;
-    gap: 30px;
-    max-width: 1300px;
+    gap: 25px;
+    max-width: 1200px;
     margin: 40px auto;
     padding: 0 20px;
     justify-content: center;
@@ -83,9 +83,14 @@ body {
     top: 100px; 
     z-index: 10;
   }
-  .main-feed { 
+  .main-feed,
+  .standings-page,
+  .news-page,
+  .replays-page,
+  .owner-panel { 
     grid-area: feed; 
     z-index: 5;
+    width: 100%;
   }
   #ad-top { 
     grid-area: ads; 
@@ -95,10 +100,10 @@ body {
     margin: 0 !important;
     z-index: 10;
   }
-  /* .bottom-nav is now visible on desktop by default as per V15 request */
+  /* .bottom-nav is now visible on desktop by default as per V15/V15.5 request */
   .bottom-nav { 
     display: flex !important; 
-    max-width: 1300px; 
+    max-width: 1200px; 
     border-radius: 20px 20px 0 0;
     left: 50%;
     transform: translateX(-50%);

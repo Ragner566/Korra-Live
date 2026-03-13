@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "15.0"
+  VERSION: "15.5"
 };
 
 let STATE = {
@@ -1873,8 +1873,14 @@ function initApp() {
   // V14.1: Monitor upcoming matches for auto-start
   setInterval(() => monitorMatchStarts(), 30000);
 
-  // Hide Splash Screen after initial load (V15: 3 seconds)
-  setTimeout(() => hideSplashScreen(), 3000);
+  // Hide Splash Screen after initial load (V15.5: strictly 3 seconds)
+  window.addEventListener('load', () => {
+    setTimeout(hideSplashScreen, 3000);
+  });
+  // Fallback in case window was already loaded
+  if (document.readyState === 'complete') {
+    setTimeout(hideSplashScreen, 3000);
+  }
 
   // Check for maintenance mode
   if (typeof firebase !== 'undefined' && firebase.firestore) {
@@ -2000,8 +2006,8 @@ function showUpdateModal(newVer) {
   modal.innerHTML = `
     <div style="background:var(--bg-secondary); padding:40px; border-radius:30px; text-align:center; max-width:400px; border:1px solid var(--accent);">
       <i class="fas fa-cloud-download-alt fa-4x" style="color:var(--accent); margin-bottom:20px;"></i>
-      <h2 style="color:#fff; margin-bottom:15px;">تحديث إجباري متوفر V${newVer}</h2>
-      <p style="color:var(--text-secondary); margin-bottom:25px;">يجب تحديث البرنامج الآن لتجنب انقطاع البث ومشاكل العرض في النسخة الجديدة.</p>
+      <h2 style="color:#fff; margin-bottom:15px;">تحديث متوفر V${newVer}</h2>
+      <p style="color:var(--text-secondary); margin-bottom:25px; line-height: 1.6;">يتوفر تحديث V15.5 لإصلاح الأخطاء وتفعيل الأرباح.. يرجى التحديث</p>
       <button onclick="window.location.reload(true)" style="background:var(--accent); color:#000; border:none; padding:15px 30px; border-radius:12px; font-weight:800; cursor:pointer; width:100%;">تحديث الآن</button>
     </div>
   `;
