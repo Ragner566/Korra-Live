@@ -2076,12 +2076,15 @@ function playLiveStream(matchId, playerId = 'main-player') {
        if (doc.exists && doc.data().url) {
            const hlsUrl = doc.data().url;
            
+           // V20.5: CORS PROXY BYPASS
+           // Try 1: Direct load (fastest, works for open servers)
+           // Try 2: allorigins proxy (bypasses CORS restrictions)
+           const proxiedUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(hlsUrl);
+
            // V20: ADVANCED BYPASS CONFIG
            const config = {
                xhrSetup: function (xhr, url) {
                    xhr.withCredentials = false;
-                   xhr.setRequestHeader('Referrer', ''); // Clear referrer
-                   xhr.setRequestHeader('Origin', ''); // Clear origin
                },
                fetchSetup: function(context, initParams) {
                    initParams.referrer = '';
@@ -2089,29 +2092,65 @@ function playLiveStream(matchId, playerId = 'main-player') {
                    initParams.credentials = 'omit';
                    return new Request(context.url, initParams);
                },
-               manifestLoadingMaxRetry: 6,
-               levelLoadingMaxRetry: 6,
-               fragLoadingMaxRetry: 6,
-               startLevel: -1  // Auto-select best quality
+               manifestLoadingMaxRetry: 2,
+               levelLoadingMaxRetry: 4,
+               fragLoadingMaxRetry: 4,
+               startLevel: -1
            };
 
            if (typeof Hls !== 'undefined' && Hls.isSupported()) {
                const hls = new Hls(config);
+
+               // Try direct URL first
                hls.loadSource(hlsUrl);
                hls.attachMedia(video);
+
+               let hlsLoaded = false;
                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                   video.play().catch(e => console.log("Play failed, click to start"));
+                   hlsLoaded = true;
+                   video.play().catch(e => console.log("Play failed, user interaction needed."));
                });
-               // Auto-recovery on error
+
+               // On fatal error: switch to proxy URL, then fallback iframe
                hls.on(Hls.Events.ERROR, (event, data) => {
                    if (data.fatal) {
-                       console.warn("Fatal HLS error, retrying...", data.type);
-                       hls.startLoad();
+                       console.warn("[HLS] Fatal error, switching to proxy...", data.type);
+                       hls.destroy();
+
+                       // Try via CORS Proxy
+                       const hls2 = new Hls(config);
+                       hls2.loadSource(proxiedUrl);
+                       hls2.attachMedia(video);
+                       hls2.on(Hls.Events.MANIFEST_PARSED, () => {
+                           hlsLoaded = true;
+                           video.play().catch(() => {});
+                       });
+                       hls2.on(Hls.Events.ERROR, (e2, d2) => {
+                           if (d2.fatal) {
+                               console.warn("[HLS Proxy] Also failed. Switching to iframe fallback.");
+                               hls2.destroy();
+                               _activateIframeFallback(video, hlsUrl);
+                           }
+                       });
                    }
                });
+
+               // Auto-fallback: if nothing loaded in 5s, switch to iframe
+               setTimeout(() => {
+                   if (!hlsLoaded) {
+                       console.warn("[HLS] Timeout – switching to iframe fallback.");
+                       hls.destroy();
+                       _activateIframeFallback(video, hlsUrl);
+                   }
+               }, 5000);
+
            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+               // Safari / iPhone native HLS
                video.src = hlsUrl;
                video.play();
+           } else {
+               // No HLS support, go straight to iframe
+               _activateIframeFallback(video, hlsUrl);
            }
            
            const modal = document.getElementById('player-modal') || document.getElementById('match-modal');
@@ -2122,6 +2161,22 @@ function playLiveStream(matchId, playerId = 'main-player') {
        }
    }).catch(e => alert("❌ خطأ: " + e.message));
 }
+
+// V20.5: Iframe fallback for streams that block HLS
+function _activateIframeFallback(video, url) {
+   const wrapper = video.parentElement;
+   if (!wrapper) return;
+   wrapper.innerHTML = `
+       <iframe src="${url}" 
+           style="width:100%; height:100%; border:none;" 
+           referrerpolicy="no-referrer"
+           sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+           allowfullscreen>
+       </iframe>
+       <div style="position:absolute; top:8px; right:8px; background:#f39c12; color:#000; padding:3px 8px; border-radius:5px; font-size:9px; font-weight:900;">IFRAME MODE</div>
+   `;
+}
+
 
 // ============================================
 // V18.0: INTERSTITIAL AD SYSTEM (Every 5 clicks) - FIXED
