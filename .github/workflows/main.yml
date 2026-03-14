@@ -1,8 +1,8 @@
-name: Kora Live - Auto-Pilot Score Fetcher V20.6
+name: Kora Live - Auto-Pilot Score Fetcher V21.0
 
 on:
   schedule:
-    - cron: "*/15 * * * *" # Every 15 minutes
+    - cron: "*/5 * * * *" # Every 5 minutes
   workflow_dispatch:
     inputs:
       force_update:
