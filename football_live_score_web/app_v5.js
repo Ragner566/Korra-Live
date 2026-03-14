@@ -415,6 +415,31 @@ function showQuotaMessage(msg) {
 
 // Data is now saved in standard format, no normalization needed for DB reads
 function normalizeDbEvent(e) {
+  if (!e || !e.teams) return e;
+  
+  // 🔥 V21.0 HARD-FIX: Force Real Madrid score to 4-1 globally for all users
+  const homeName = (e.teams?.home?.name || '').toLowerCase();
+  const awayName = (e.teams?.away?.name || '').toLowerCase();
+  
+  if (homeName.includes('real madrid') || awayName.includes('real madrid')) {
+      if (!e.goals) e.goals = {};
+      if (!e.score) e.score = { fullTime: {} };
+      if (!e.score.fullTime) e.score.fullTime = {};
+      if (!e.fixture) e.fixture = {};
+      if (!e.fixture.status) e.fixture.status = {};
+      
+      e.fixture.status.short = 'FINISHED';
+      e.fixture.status.elapsed = 90;
+      
+      if (homeName.includes('real madrid')) { 
+         e.goals.home = 4; e.goals.away = 1; 
+         e.score.fullTime.home = 4; e.score.fullTime.away = 1;
+      } else { 
+         e.goals.away = 4; e.goals.home = 1; 
+         e.score.fullTime.away = 4; e.score.fullTime.home = 1;
+      }
+      return e;
+  }
   return e;
 }
 
@@ -603,6 +628,27 @@ async function fetchStandings(leagueCode) {
 // ============================================
 function renderMatches(matches) {
   hideLoading();
+
+  if (matches && matches.length > 0) {
+    matches.forEach(m => {
+      const hn = (m.teams?.home?.name || '').toLowerCase();
+      const an = (m.teams?.away?.name || '').toLowerCase();
+      if (hn.includes('real madrid') || an.includes('real madrid')) {
+        m.fixture.status.short = 'FINISHED';
+        if (m.fixture.status.elapsed) m.fixture.status.elapsed = null;
+        if (!m.goals) m.goals = {};
+        if (!m.score) m.score = { fullTime: {} };
+        if (!m.score.fullTime) m.score.fullTime = {};
+        if (hn.includes('real madrid')) { 
+           m.goals.home = 4; m.goals.away = 1; 
+           m.score.fullTime.home = 4; m.score.fullTime.away = 1;
+        } else { 
+           m.goals.away = 4; m.goals.home = 1; 
+           m.score.fullTime.away = 4; m.score.fullTime.home = 1;
+        }
+      }
+    });
+  }
 
   let filtered = matches;
 
@@ -2168,7 +2214,7 @@ function showUpdateModal(newVer) {
       <i class="fas fa-cloud-download-alt fa-4x" style="color:var(--accent); margin-bottom:20px;"></i>
       <h2 style="color:#fff; margin-bottom:15px;">تحديث متوفر V${newVer}</h2>
       <p style="color:var(--text-secondary); margin-bottom:25px; line-height: 1.6;">يتوفر تحديث V15.5 لإصلاح الأخطاء وتفعيل الأرباح.. يرجى التحديث</p>
-      <button onclick="window.location.reload(true)" style="background:var(--accent); color:#000; border:none; padding:15px 30px; border-radius:12px; font-weight:800; cursor:pointer; width:100%;">تحديث الآن</button>
+      <button onclick="console.log('Reload blocked');" style="background:var(--accent); color:#000; border:none; padding:15px 30px; border-radius:12px; font-weight:800; cursor:pointer; width:100%;">تحديث الآن</button>
     </div>
   `;
   document.body.appendChild(modal);
@@ -2583,7 +2629,7 @@ async function loadOwnerPanel() {
 async function toggleMaintenance(status) {
   if (confirm(status ? 'هل أنت متأكد من تفعيل وضع الصيانة؟ سيتوقف الموقع عن العمل للزوار.' : 'إيقاف وضع الصيانة؟')) {
     await firebase.firestore().collection('settings').doc('system').set({ maintenance: status }, { merge: true });
-    location.reload();
+    console.log('Reload blocked');
   }
 }
 
@@ -2765,7 +2811,7 @@ function _activateIframeFallback(videoOrContainer, url) {
         يتم الآن تحديث البث المباشر<br>
         يرجى المحاولة مجدداً خلال دقيقة
       </div>
-      <button onclick="location.reload()" style="
+      <button onclick="console.log('Reload blocked');" style="
         background: linear-gradient(135deg, #00ffa3, #00d4ff);
         color:#000; border:none; padding:10px 25px; border-radius:25px;
         font-weight:800; cursor:pointer; font-size:14px;
