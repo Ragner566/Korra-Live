@@ -246,14 +246,14 @@ async function fetchMatchesForRange(dateFrom, dateTo) {
             }
           });
           if (ytRes.data.items && ytRes.data.items.length > 0) {
-            highlightsUrl = `https://www.youtube.com/embed/${ytRes.data.items[0].id.videoId}`;
+            highlightsUrl = `https://www.youtube.com/embed/${ytRes.data.items[0].id.videoId}?enablejsapi=1&rel=0`;
           } else {
             // Fallback list embed if specific video fails
-            highlightsUrl = `https://www.youtube.com/embed?listType=search&list=${query}`;
+            highlightsUrl = `https://www.youtube.com/embed?listType=search&list=${query}&enablejsapi=1&rel=0`;
           }
         } catch (ytErr) {
           console.warn(`YouTube search failed for ${homeName}:`, ytErr.response?.data?.error?.message || ytErr.message);
-          highlightsUrl = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(homeName + ' ' + awayName)}`;
+          highlightsUrl = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(homeName + ' ' + awayName)}&enablejsapi=1&rel=0`;
         }
         
         fullMatchUrl = `https://footballia.eu/search?q=${encodeURIComponent(homeName + ' ' + awayName)}`;

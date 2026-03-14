@@ -455,28 +455,66 @@ async function fetchMatchesDirect(dateStr) {
 
 async function fetchMatchDetailsServer(fixtureId) {
   // Football-Data.org API fetch for timeline
+  let events = [];
+  let fetchedAPI = false;
+  let data = null;
   try {
     const keyToUse = STATE.apiKey ? STATE.apiKey.trim() : CONFIG.FALLBACK_API_KEY;
     const res = await fetch(`https://api.football-data.org/v4/matches/${fixtureId}`, {
          headers: { "X-Auth-Token": keyToUse }
     });
     if (res.ok) {
-       const data = await res.json();
-       const events = [];
+       fetchedAPI = true;
+       data = await res.json();
        if(data.goals) data.goals.forEach(g => { events.push({...g, type: 'GOAL', time: g.minute, detailText: g.scorer?.name || ''}); });
        if(data.substitutions) data.substitutions.forEach(s => { events.push({...s, type: 'SUBSTITUTION', time: s.minute, detailText: s.playerIn?.name || '', subText: `↑ ${s.playerIn?.name || ''} ↓ ${s.playerOut?.name || ''}`}); });
        if(data.bookings) data.bookings.forEach(b => { 
            events.push({...b, type: b.card === 'RED_CARD' ? 'RED_CARD' : 'YELLOW_CARD', time: b.minute, detailText: b.player?.name || '' }); 
        });
+    }
+  } catch(e) { console.warn("Direct fetch Match failed", e); }
+  
+  // 1. Fallback to Firebase `match_events` if API failed or no events
+  if (!fetchedAPI || events.length === 0) {
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      try {
+        const doc = await firebase.firestore().collection("match_events").doc(String(fixtureId)).get();
+        if (doc.exists) {
+           events = doc.data().events || [];
+           console.log(`[Events] Fallback manual events loaded:`, events.length);
+        }
+      } catch(e) { console.warn("Firebase events fallback failed:", e); }
+    }
+  }
+
+  // Enforce GMT+3 if events have full timestamps instead of minutes
+  events = events.map(ev => {
+     let timeValue = ev.time || ev.minute || '';
+     if (ev.timestamp || (typeof timeValue === 'string' && timeValue.includes(':'))) {
+        try {
+           const d = new Date(ev.timestamp || timeValue);
+           if (!isNaN(d.getTime())) {
+             // Output format HH:MM equivalent to GMT+3 (Asia/Riyadh)
+             ev.time = d.toLocaleTimeString('en-US', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute:'2-digit', hour12: false });
+             ev._isClock = true; // Flag to skip the ' tick
+           }
+        } catch(e) {}
+     }
+     return ev;
+  });
+
+  if (fetchedAPI && data) {
        return { 
            events: events, 
            statistics: data.statistics || [], 
            lineups: data.lineups || { home: {}, away: {} },
            match: null
        };
-    }
-  } catch(e) { console.warn("Direct fetch Match failed", e); }
-  return await fetchMatchDetails(fixtureId);
+  }
+
+  let finalDetails = await fetchMatchDetails(fixtureId);
+  finalDetails.events = (events && events.length > 0) ? events : (finalDetails.events || []);
+  return finalDetails;
 }
 
 async function fetchMatchDetails(fixtureId) {
@@ -545,10 +583,21 @@ function renderMatches(matches) {
   const liveContainer = document.getElementById("live-matches");
   const liveCount = document.getElementById("live-count");
 
+  const renderListWithAds = (list, type) => {
+    let ht = "";
+    for(let i=0; i<list.length; i++){
+       ht += matchCardHTML(list[i], type);
+       if ((i + 1) % 3 === 0) {
+          ht += `<div class="ad-native-item" style="margin: 10px 0; text-align: center; border-radius: 12px; overflow: hidden; background: var(--bg-card); min-height: 250px; display: flex; align-items: center; justify-content: center;"><script async="async" data-cfasync="false" src="//pl25920392.jads.com/f04c3e80/"></script></div>`;
+       }
+    }
+    return ht;
+  };
+
   if (live.length > 0) {
     liveSection.style.display = "block";
     liveCount.textContent = live.length;
-    liveContainer.innerHTML = live.map((m) => matchCardHTML(m, "live")).join("");
+    liveContainer.innerHTML = renderListWithAds(live, "live");
   } else {
     liveSection.style.display = "none";
   }
@@ -561,7 +610,7 @@ function renderMatches(matches) {
   if (scheduled.length > 0) {
     scheduledSection.style.display = "block";
     scheduledCount.textContent = scheduled.length;
-    scheduledContainer.innerHTML = scheduled.map((m) => matchCardHTML(m, "scheduled")).join("");
+    scheduledContainer.innerHTML = renderListWithAds(scheduled, "scheduled");
   } else {
     scheduledSection.style.display = "none";
   }
@@ -574,7 +623,7 @@ function renderMatches(matches) {
   if (finished.length > 0) {
     finishedSection.style.display = "block";
     finishedCount.textContent = finished.length;
-    finishedContainer.innerHTML = finished.map((m) => matchCardHTML(m, "finished")).join("");
+    finishedContainer.innerHTML = renderListWithAds(finished, "finished");
   } else {
     finishedSection.style.display = "none";
   }
@@ -945,7 +994,11 @@ function renderEvents(incidents) {
   }
   
   // Sort by time ascending
-  const sorted = [...incidents].sort((a, b) => (parseInt(a.time) || 0) - (parseInt(b.time) || 0));
+  const sorted = [...incidents].sort((a, b) => {
+    const valA = (typeof a.time === 'string' && a.time.includes(':')) ? parseInt(a.time.replace(':','')) : (parseInt(a.time) || 0);
+    const valB = (typeof b.time === 'string' && b.time.includes(':')) ? parseInt(b.time.replace(':','')) : (parseInt(b.time) || 0);
+    return valA - valB;
+  });
 
   let html = '<div class="events-timeline">';
   sorted.forEach((ev) => {
@@ -978,11 +1031,12 @@ function renderEvents(incidents) {
     }
 
     const alignClass = ev.isHome ? 'home-event' : 'away-event';
+    const displayTime = ev._isClock ? time : `${time}'`;
 
     html += `
       <div class="event-item ${alignClass}">
         <div class="event-icon ${iconClass}">${label}</div>
-        <div class="event-time">${time}'</div>
+        <div class="event-time">${displayTime}</div>
         <div class="event-detail">
           ${detailText} ${subText}
         </div>
