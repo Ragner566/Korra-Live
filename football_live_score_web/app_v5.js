@@ -307,7 +307,7 @@ async function fetchMatches(forcedDocId = null) {
              });
           }
       });
-      return; 
+      // 🚨 Fix: Do NOT return here. Fall through to load LocalStorage so the page doesn't get stuck in an infinite loading loop!
   }
 
   const dateStr = formatDateAPI(STATE.currentDate);
@@ -1641,7 +1641,7 @@ async function initFirebaseSync() {
         STATE.isFirebaseLoaded = true;
         initApp();
       } else {
-        refreshData();
+        if (typeof fetchMatches === 'function') fetchMatches();
       }
     } else {
       console.warn("No settings doc in Firestore. Using fallback key.");

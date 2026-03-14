@@ -34,7 +34,6 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN || '9668d27376c9462d9214777a8340d21e' }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           FORCE_UPDATE: ${{ github.event.inputs.force_update }}
         run: node fetch-scores.js || echo "⚠️ fetch-scores finished with warnings (non-fatal)"
         continue-on-error: true
