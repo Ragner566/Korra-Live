@@ -2397,9 +2397,13 @@ function playLiveStream(matchId, playerId = 'main-player') {
            if (modal) modal.style.display = 'flex';
 
        } else {
-           console.warn(\"[Player] Stream missing in Firestore. Checking backup...\"); _checkChannelsDataFallback(matchId, video);
+           console.warn("[Player] Stream missing in Firestore. Checking backup...");
+           _checkChannelsDataFallback(matchId, video);
        }
-    }).catch(e => { console.error(\"[Player] Firebase error:\", e); _checkChannelsDataFallback(matchId, video); });
+    }).catch(e => {
+        console.error("[Player] Firebase error:", e);
+        _checkChannelsDataFallback(matchId, video);
+    });
 }
 
 // V20.5: Iframe fallback for streams that block HLS
@@ -2809,6 +2813,47 @@ function playChannelStream(idx, url, name) {
   } else {
     _activateIframeFallback(video, url);
   }
+}
+
+/**
+ * 🔥 V22.2: Channel Automator & 404 Rescue
+ * Searches channels_data.json and binds matches to channels automatically based on team names.
+ */
+function _checkChannelsDataFallback(matchId, videoEl) {
+   if (!videoEl) return;
+   const match = STATE.allMatches?.find(m => String(m.fixture.id) === String(matchId));
+   const teamsStr = match ? (match.teams.home.name + " " + match.teams.away.name).toLowerCase() : "";
+   
+   fetch('/channels_data.json')
+     .then(res => res.json())
+     .then(data => {
+         const channels = data.channels || [];
+         let fallbackUrl = null;
+         
+         // 1. Smart Matching: Look for team-specific channel matches (e.g., "Real Madrid" -> "HD 1")
+         if (teamsStr.includes('real madrid') || teamsStr.includes('ريال')) {
+             const bein1 = channels.find(c => c.name.toLowerCase().includes('hd 1') || c.name.toLowerCase().includes('bein 1'));
+             if (bein1) fallbackUrl = bein1.url;
+         }
+         
+         // 2. Generic Fallback: Use the first available stable channel if no specific match
+         if (!fallbackUrl && channels.length > 0) {
+             const stable = channels.find(c => c.name.toLowerCase().includes('hd 1') || c.name.toLowerCase().includes('bein'));
+             fallbackUrl = stable ? stable.url : channels[0].url;
+         }
+         
+         if (fallbackUrl) {
+             console.log("[Fallback] Routing stream to:", fallbackUrl);
+             _activateIframeFallback(videoEl, fallbackUrl);
+         } else {
+             // 3. Final Fallback: Video placeholder "Server Updating"
+             _activateIframeFallback(videoEl, null); 
+         }
+     })
+     .catch(err => {
+         console.error("[Fallback] JSON fetch failed:", err);
+         _activateIframeFallback(videoEl, null);
+     });
 }
 
 // ============================================
