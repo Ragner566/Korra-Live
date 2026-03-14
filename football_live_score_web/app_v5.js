@@ -630,9 +630,20 @@ function renderMatches(matches) {
   hideLoading();
 
   if (matches && matches.length > 0) {
+    const now = Date.now();
     matches.forEach(m => {
       const hn = (m.teams?.home?.name || '').toLowerCase();
       const an = (m.teams?.away?.name || '').toLowerCase();
+      const startTime = m.fixture.timestamp * 1000;
+      
+      // 🔥 GLOBAL V22.2: Auto-Finish logic (force finish after 110 mins)
+      const shouldBeFinished = now > (startTime + 110 * 60 * 1000);
+      if (shouldBeFinished && m.fixture.status.short !== 'FINISHED') {
+         m.fixture.status.short = 'FINISHED';
+         if (m.fixture.status.elapsed) m.fixture.status.elapsed = null;
+      }
+
+      // 🔥 HARD-FIX: Real Madrid 4-1 Overrider
       if (hn.includes('real madrid') || an.includes('real madrid')) {
         m.fixture.status.short = 'FINISHED';
         if (m.fixture.status.elapsed) m.fixture.status.elapsed = null;
@@ -806,21 +817,37 @@ function matchCardHTML(match, type) {
 
   const manualUrl = STATE.manualLinks ? STATE.manualLinks[fixture.id] : null;
   const activeUrl = manualUrl || match.stream_link;
+  const isMatchFinished = ["FINISHED", "FT", "AET", "PEN"].includes(status.short) || type === "finished";
 
-  const streamBtn = activeUrl ? `
+
+  let streamBtn = '';
+  if (isMatchFinished) {
+    const hn = encodeURIComponent(teams.home.name);
+    const an = encodeURIComponent(teams.away.name);
+    const ytLink = `https://www.youtube.com/results?search_query=${hn}+vs+${an}+highlights`;
+    streamBtn = `
+      <div class="match-card-footer" style="border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; text-align: center;">
+         <button class="btn-play-replay" onclick="event.stopPropagation(); window.open('${ytLink}', '_blank')" style="min-width: 150px; font-size: 11px; padding: 8px 15px; background:linear-gradient(135deg,#ff2a2a,#ff0000); color:#fff; border-radius:10px; border:none; cursor:pointer;" title="مشاهدة ملخص المباراة على يوتيوب">
+           <i class="fab fa-youtube"></i> ${STATE.currentLang === 'ar' ? 'مشاهدة الأهداف على يوتيوب' : 'Watch Highlights on YouTube'}
+         </button>
+      </div>
+    `;
+  } else if (activeUrl) {
+    streamBtn = `
     <div class="match-card-footer" style="border-top:1px solid var(--border); padding-top:10px; margin-top:10px;">
        <button class="btn-primary live-btn-pulse" onclick="event.stopPropagation(); playLiveStream('${fixture.id}')" 
          style="width:100%; background:linear-gradient(135deg,#00ffa3,#00d4ff); color:#000; font-weight:900; border:none; border-radius:10px; padding:10px; cursor:pointer; font-size:12px; ${manualUrl ? 'background:linear-gradient(135deg,#2ecc71,#27ae60); color:#fff; box-shadow:0 0 15px rgba(46,204,113,0.5); border:1px solid #00ffa3;' : ''}">
          <i class="fas fa-play"></i> ${manualUrl ? '⚡ شاهد الآن' : 'شاهد البث المباشر'}
        </button>
     </div>
-` : (type === "finished" ? `
-    <div class="match-card-footer" style="border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; text-align: center;">
-       <button class="btn-play-replay" onclick="event.stopPropagation(); openReplayDetail('${fixture.id}')" style="min-width: 150px; font-size: 11px; padding: 6px 12px;">
-         <i class="fas fa-play-circle"></i> ${STATE.currentLang === 'ar' ? 'مشاهدة الأهداف والإعادة' : 'Watch Replays & Goals'}
-       </button>
-    </div>
-  ` : '');
+    `;
+  }
+
+
+
+
+
+
 
   const footerBtn = streamBtn;
 
@@ -1825,7 +1852,7 @@ function promptInstallPWA() {
       deferredPrompt = null;
     });
   } else {
-    alert(STATE.currentLang === 'ar' ? 'التطبيق مثبت بالفعل أو متصفحك لا يدعم التثبيت التلقائي. استخدم "إضافة إلى الشاشة الرئيسية" من قائمة المتصفح.' : 'App already installed or browser does not support auto-install. Use "Add to Home Screen" from browser menu.');
+    console.warn('PWA Install not available.');
   }
 }
 
@@ -2014,7 +2041,7 @@ function updateDynamicSEO(title, description) {
 }
 
 function openVIPDownload() {
-  alert(STATE.currentLang === "ar" ? "🛑 هذه الميزة متاحة للمشتركين VIP فقط. اشترك الآن لتحميل المباريات كاملة بجودة HD!" : "🛑 This feature is available for VIP subscribers only. Join now to download full matches in HD!");
+  console.log("VIP feature requested.");
 }
 
 function initApp() {
@@ -2152,7 +2179,7 @@ async function watchGlobalVersion() {
     if (data.latestVersion && parseFloat(data.latestVersion) > parseFloat(CONFIG.VERSION)) {
        console.warn("CRITICAL UPDATE FOUND! Forcing update modal.");
        // Primitive Fallback Alert
-       alert(`يتوفر تحديث إجباري للنسخة ${data.latestVersion}. يرجى الضغط على زر التحديث أو Ctrl+F5`);
+       console.info("Update available: " + data.latestVersion);
        showUpdateModal(data.latestVersion);
     } else {
        console.log("[Version Watcher] System is up to date.");
@@ -2370,9 +2397,9 @@ function playLiveStream(matchId, playerId = 'main-player') {
            if (modal) modal.style.display = 'flex';
 
        } else {
-           alert("يا فلاش الرابط مش موجود في Firebase تأكد من المسار!");
+           console.warn(\"[Player] Stream missing in Firestore. Checking backup...\"); _checkChannelsDataFallback(matchId, video);
        }
-   }).catch(e => alert("❌ خطأ: " + e.message));
+    }).catch(e => { console.error(\"[Player] Firebase error:\", e); _checkChannelsDataFallback(matchId, video); });
 }
 
 // V20.5: Iframe fallback for streams that block HLS
@@ -2627,7 +2654,7 @@ async function loadOwnerPanel() {
 }
 
 async function toggleMaintenance(status) {
-  if (confirm(status ? 'هل أنت متأكد من تفعيل وضع الصيانة؟ سيتوقف الموقع عن العمل للزوار.' : 'إيقاف وضع الصيانة؟')) {
+  if (true) {
     await firebase.firestore().collection('settings').doc('system').set({ maintenance: status }, { merge: true });
     console.log('Reload blocked');
   }
