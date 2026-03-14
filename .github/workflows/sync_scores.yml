@@ -25,6 +25,7 @@ jobs:
 
       - name: Run Sync Script
         env:
-          # This secret must be set in GitHub Repository Settings -> Secrets and variables -> Actions
+          # These secrets must be set in GitHub Repository Settings -> Secrets and variables -> Actions
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
         run: node sync_script.js

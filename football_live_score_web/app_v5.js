@@ -2738,3 +2738,39 @@ function playChannelStream(idx, url, name) {
   }
 }
 
+// ============================================
+// V20.6: STREAM FALLBACK - Arabic 404 replacement
+// ============================================
+function _activateIframeFallback(videoOrContainer, url) {
+  const wrapper = videoOrContainer?.parentElement || videoOrContainer;
+  if (!wrapper) return;
+
+  const isYoutube = url && (url.includes('youtube') || url.includes('youtu.be'));
+  if (isYoutube) {
+    wrapper.innerHTML = `<iframe src="${url}" allowfullscreen allow="autoplay; encrypted-media" style="width:100%;height:100%;border:none;border-radius:12px;"></iframe>`;
+    return;
+  }
+
+  wrapper.innerHTML = `
+    <div style="
+      width:100%; height:100%; min-height:220px;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      background: linear-gradient(135deg, #0a0f1e 0%, #0d1b2a 100%);
+      border-radius:12px; border:1px solid rgba(0,255,163,0.2);
+      text-align:center; padding:30px; box-sizing:border-box;
+    ">
+      <div style="font-size:3rem; margin-bottom:15px; animation:pulse 2s infinite;">📡</div>
+      <div style="font-size:18px; font-weight:800; color:#00ffa3; margin-bottom:10px;">جاري تحديث السيرفر</div>
+      <div style="font-size:13px; color:rgba(255,255,255,0.5); margin-bottom:20px; line-height:1.6;">
+        يتم الآن تحديث البث المباشر<br>
+        يرجى المحاولة مجدداً خلال دقيقة
+      </div>
+      <button onclick="location.reload()" style="
+        background: linear-gradient(135deg, #00ffa3, #00d4ff);
+        color:#000; border:none; padding:10px 25px; border-radius:25px;
+        font-weight:800; cursor:pointer; font-size:14px;
+        box-shadow: 0 0 15px rgba(0,255,163,0.4);
+      ">🔄 إعادة المحاولة</button>
+    </div>
+  `;
+}

@@ -1,4 +1,14 @@
 {
+  "name": "korra-live",
+  "version": "20.6.0",
+  "description": "Korra Live - Football Scores Auto-Pilot System",
+  "scripts": {
+    "finish": "git add -A && git commit -m \"🚀 Auto-Deploy: $(date +%Y-%m-%d_%H:%M)\" && git push && firebase deploy --only hosting",
+    "deploy": "firebase deploy --only hosting",
+    "sync": "node fetch-scores.js",
+    "sync:standings": "node sync_script.js",
+    "start": "node fetch-scores.js"
+  },
   "dependencies": {
     "axios": "^1.13.6",
     "dotenv": "^17.3.1",
