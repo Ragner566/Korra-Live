@@ -11,7 +11,7 @@ let CONFIG = {
   REFRESH_INTERVAL: 120000, // 2 minutes
   FALLBACK_API_KEY: "33e62ca975a749858503fdf63b75d9d7",
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL"],
-  VERSION: "19.5"
+  VERSION: "22.0"
 };
 
 let STATE = {
@@ -216,14 +216,29 @@ async function selectMatchDay(day, btn) {
 
   // Turbo Reload: Instantly pull from cache, no spinners
   const docId = formatDateAPI(STATE.currentDate);
+  // V22.0: Instant cache - try cache first, then localStorage
   if (STATE.allMatchesCache && STATE.allMatchesCache[docId]) {
     STATE.allMatches = STATE.allMatchesCache[docId];
     hideLoading();
     renderMatches(STATE.allMatches);
     setupManualStreamListener();
-  } else {
-    await fetchMatches(null);
+    return;
   }
+  const localCached = localStorage.getItem(`matches_${docId}`);
+  if (localCached) {
+    try {
+      const parsed = JSON.parse(localCached);
+      if (parsed && parsed.length > 0) {
+        STATE.allMatches = parsed;
+        STATE.allMatchesCache[docId] = parsed;
+        hideLoading();
+        renderMatches(STATE.allMatches);
+        setupManualStreamListener();
+        return;
+      }
+    } catch (e) {}
+  }
+  await fetchMatches(null);
 }
 
 // Delegation for Match Cards & Navigation (V14.0 Fix)
@@ -403,6 +418,20 @@ function normalizeDbEvent(e) {
   return e;
 }
 
+// V22.0: Convert any YouTube URL to official embed format
+function toYouTubeEmbed(url) {
+  if (!url || typeof url !== 'string') return url;
+  let vid = null;
+  if (url.includes('youtube.com/embed/')) return url;
+  if (url.includes('youtube.com/watch?v=')) {
+    vid = url.match(/[?&]v=([^&]+)/)?.[1];
+  } else if (url.includes('youtu.be/')) {
+    vid = url.match(/youtu\.be\/([^?]+)/)?.[1];
+  }
+  if (vid) return `https://www.youtube.com/embed/${vid}?enablejsapi=1&rel=0`;
+  return url;
+}
+
 // Direct API fallback using Football-Data.org
 async function fetchMatchesDirect(dateStr) {
   const cacheBuster = Date.now();
@@ -453,7 +482,7 @@ async function fetchMatchesDirect(dateStr) {
 // (Legacy setupLiveMatchesListener merged into fetchMatches)
 
 
-async function fetchMatchDetailsServer(fixtureId) {
+async function fetchMatchDetailsServer(fixtureId, dateStr = null) {
   // Football-Data.org API fetch for timeline
   let events = [];
   let fetchedAPI = false;
@@ -474,14 +503,25 @@ async function fetchMatchDetailsServer(fixtureId) {
     }
   } catch(e) { console.warn("Direct fetch Match failed", e); }
   
-  // 1. Fallback to Firebase `match_events` if API failed or no events
+  // V22.0: Fallback to Firebase match_events - try both paths
   if (!fetchedAPI || events.length === 0) {
     if (typeof firebase !== 'undefined' && firebase.firestore) {
       try {
-        const doc = await firebase.firestore().collection("match_events").doc(String(fixtureId)).get();
-        if (doc.exists) {
-           events = doc.data().events || [];
-           console.log(`[Events] Fallback manual events loaded:`, events.length);
+        // 1. Try matches/{date}/match_events/{matchId}
+        if (dateStr) {
+          const subDoc = await firebase.firestore().collection("matches").doc(dateStr).collection("match_events").doc(String(fixtureId)).get();
+          if (subDoc.exists && (subDoc.data().events?.length || 0) > 0) {
+            events = subDoc.data().events || [];
+            console.log(`[Events] Loaded from matches/${dateStr}/match_events:`, events.length);
+          }
+        }
+        // 2. Fallback: flat match_events collection
+        if (events.length === 0) {
+          const doc = await firebase.firestore().collection("match_events").doc(String(fixtureId)).get();
+          if (doc.exists) {
+            events = doc.data().events || [];
+            console.log(`[Events] Fallback match_events loaded:`, events.length);
+          }
         }
       } catch(e) { console.warn("Firebase events fallback failed:", e); }
     }
@@ -588,7 +628,7 @@ function renderMatches(matches) {
     for(let i=0; i<list.length; i++){
        ht += matchCardHTML(list[i], type);
        if ((i + 1) % 3 === 0) {
-          ht += `<div class="ad-native-item" style="margin: 10px 0; text-align: center; border-radius: 12px; overflow: hidden; background: var(--bg-card); min-height: 250px; display: flex; align-items: center; justify-content: center;"><script async="async" data-cfasync="false" src="//pl25920392.jads.com/f04c3e80/"></script></div>`;
+          ht += `<div class="ad-native-item" style="margin: 10px 0; text-align: center; border-radius: 12px; overflow: hidden; background: var(--bg-card); min-height: 250px; width: 100%; display: flex; align-items: center; justify-content: center;"><script async="async" data-cfasync="false" src="//pl25920392.jads.com/f04c3e80/"></script></div>`;
        }
     }
     return ht;
@@ -856,7 +896,7 @@ async function openMatchDetail(fixtureId) {
        <div style="padding: 20px; text-align: center;">
          ${match.highlights?.url ? `
          <div class="video-player-placeholder" style="width: 100%; background: #000; border-radius: 20px; margin-bottom: 25px; border: 2px solid var(--accent); position: relative; overflow: hidden; box-shadow: 0 0 20px var(--accent-glow); aspect-ratio: 16/9;">
-           <iframe src="${match.highlights.url}" allowfullscreen allow="autoplay; encrypted-media" style="width: 100%; height: 100%; border: none;"></iframe>
+           <iframe src="${toYouTubeEmbed(typeof match.highlights === 'object' ? match.highlights.url : match.highlights)}" allowfullscreen allow="autoplay; encrypted-media" style="width: 100%; height: 100%; border: none;"></iframe>
          </div>
          <h3 style="margin-bottom:10px;">مشاهدة ملخص المباراة</h3>
          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:20px;">الأهداف كاملة واللقطات المثيرة بجودة HD</p>
@@ -888,15 +928,16 @@ async function openMatchDetail(fixtureId) {
        </div>
     </div>
     ` : ''}
-    <div id="ad-under-player" style="margin-top: 15px; text-align: center; background: rgba(255,255,255,0.02); border-radius: 12px; padding: 10px;">
+    <div id="ad-under-player" style="margin-top: 15px; text-align: center; background: rgba(255,255,255,0.02); border-radius: 12px; padding: 10px; min-height: 90px; width: 100%; max-width: 728px; margin-left: auto; margin-right: auto;">
        <div style="font-size: 10px; opacity: 0.5;">إعلان</div>
-       <!-- Adsterra Under Player Box -->
+       <!-- Adsterra Under Player Box - Fixed dimensions to prevent layout shift -->
        <script async="async" data-cfasync="false" src="//pl2561234.jads.com/5c9d2f2/"></script>
     </div>
   `;
 
-  // Fetch details - FORCE SERVER to bypass cache
-  const details = await fetchMatchDetailsServer(fixtureId);
+  // Fetch details - pass date for Firebase match_events path
+  const dateStr = match.fixture?.date ? match.fixture.date.split('T')[0] : formatDateAPI(STATE.currentDate);
+  const details = await fetchMatchDetailsServer(fixtureId, dateStr);
   console.log(`[Interaction] Details Received:`, details);
 
   const eventsContainer = document.getElementById("modal-events");
@@ -2590,32 +2631,19 @@ async function loadLiveTV() {
   `;
 
   try {
-    // 1. Fetch JSON file generated locally by backend script (Zero CORS)
+    // V22.0 CORS FIX: Fetch LOCAL channels_data.json ONLY (no external IPTV fetch)
     const res = await fetch('/channels_data.json');
     if (!res.ok) throw new Error("Failed to load local channels data");
     const data = await res.json();
     
-    if (data && data.channels) {
+    if (data && data.channels && data.channels.length > 0) {
        _renderChannels(data.channels.slice(0, 50), grid, countEl);
        _liveTVLoaded = true;
        return;
     }
+    throw new Error("لا توجد قنوات في الملف المحلي");
   } catch (e) {
-    console.warn("[LiveTV] Local channels fetch failed, trying Firestore...", e);
-    // 2. Fallback to Firestore
-    if (typeof firebase !== 'undefined' && firebase.firestore) {
-      try {
-        const doc = await firebase.firestore().collection('live_tv').doc('channels').get();
-        if (doc.exists && doc.data().channels?.length > 0) {
-          _renderChannels(doc.data().channels.slice(0, 50), grid, countEl);
-          _liveTVLoaded = true;
-          return;
-        }
-      } catch (e2) {
-         console.warn("[LiveTV] Firestore fallback failed:", e2);
-      }
-    }
-    
+    console.warn("[LiveTV] Local channels fetch failed:", e.message);
     grid.innerHTML = `
       <div style="grid-column:1/-1; text-align:center; padding:30px;">
         <i class="fas fa-exclamation-triangle" style="color:#ff4d4d; font-size:2rem; margin-bottom:10px;"></i>

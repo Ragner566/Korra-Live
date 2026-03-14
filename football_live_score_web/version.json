@@ -1,6 +1,6 @@
 {
-  "latestVersion": "19.5",
-  "critical": true,
-  "message": "V19.5: نظام إدارة البث اليدوي المتقدم (Dedicated Collection) + أرباح Adsterra الحقيقية",
+  "latestVersion": "22.0",
+  "critical": false,
+  "message": "V22.0: إصلاح CORS للقنوات + Timeline من Firebase + تخزين مؤقت فوري + تحسين الإعلانات",
   "desktopUrl": "https://korra-b5d32.web.app"
 }
