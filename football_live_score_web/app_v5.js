@@ -1,14 +1,14 @@
 // =============================================================
-//  Korra Live - FULL PRODUCTION CODE (V32.0-FOOTBALL-NEWS-ONLY)
+//  Korra Live - FULL PRODUCTION CODE (V33.0-REAL-DATA-EVENTS)
 //  Hybrid Player, Iframe CORS Bypass, Smart Auto-Fallback
-//  Football News: Transfers, Injuries, Club News — Real Data Only
+//  Football News + Live Match Events Timeline (Firebase Sync)
 // =============================================================
 
 // 1. الإعدادات والحالة (CONFIG & STATE)
 let CONFIG = {
   REFRESH_INTERVAL: 120000,
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "32.0-FOOTBALL-NEWS-ONLY"
+  VERSION: "33.0-REAL-DATA-EVENTS"
 };
 
 let STATE = {
@@ -658,6 +658,7 @@ async function openMatchDetail(fixtureId) {
   document.body.style.overflow = "hidden";
 
   updateModalContent(fixtureId);
+  fetchMatchEvents(fixtureId); // V33.0 Fetch realtime events
 }
 
 function updateModalContent(fixtureId) {
@@ -713,33 +714,85 @@ function updateModalContent(fixtureId) {
   if (STATE.activeModalTab === 'stream') initHlsPlayer(match);
 }
 
-// 9. الرندرة الفرعية (Events, Stats, Lineups) - V24.3 الاحترافية
+// 8.1 جلب الأحداث المباشرة من node match_events (V33.0)
+function fetchMatchEvents(fixtureId) {
+    if (typeof firebase === 'undefined' || !firebase.database) return;
+    
+    const eventsContainer = document.getElementById('modal-events');
+    const match = STATE.allMatches.find(m => String(m.fixture.id) === String(fixtureId));
+    
+    firebase.database().ref(`match_events/${fixtureId}`).once('value').then(snapshot => {
+        const data = snapshot.val();
+        if (data && data.events && data.events.length > 0 && match) {
+            // تحديث الأحداث في المودال إذا كنا لا نزال نفس المباراة
+            if (String(STATE.openMatchId) === String(fixtureId)) {
+                match.events = data.events; // Update local state
+                if (eventsContainer) {
+                    eventsContainer.innerHTML = renderEvents(data.events, match);
+                }
+            }
+        } else {
+            if (eventsContainer && (!match.events || match.events.length === 0)) {
+                eventsContainer.innerHTML = `<div style="text-align:center; padding:50px 20px; color:rgba(255,255,255,0.4); font-size:13px;">لم تبدأ الأحداث بعد أو غير متوفرة لهذه المباراة</div>`;
+            }
+        }
+    }).catch(err => console.error("Error fetching match events:", err));
+}
+
+// 9. الرندرة الفرعية (Events, Stats, Lineups) - V33.0 الأحداث الاحترافية
 function renderEvents(events, match) {
   if (!events || !Array.isArray(events) || events.length === 0) {
-    return `<div style="text-align:center; padding:50px 20px; color:rgba(255,255,255,0.4); font-size:13px;">الأحداث تظهر فور وقوعها (أهداف، بطاقات)</div>`;
+    return `<div style="text-align:center; padding:50px 20px; color:rgba(255,255,255,0.4); font-size:13px;"><div class="loading-spinner" style="margin: 0 auto 15px;"></div>جاري جلب أحداث المباراة...</div>`;
   }
   
-  let html = `<div class="events-list" style="display:flex; flex-direction:column; gap:12px;">`;
+  // V33.0 Timeline UI
+  let html = `<div class="events-timeline" style="position:relative; padding:10px 0; display:flex; flex-direction:column; gap:16px;">
+                 <div style="position:absolute; left:50%; top:0; bottom:0; width:2px; background:rgba(255,255,255,0.1); transform:translateX(-50%);"></div>`;
+  
   events.forEach(e => {
-    // منع ظهور Object أو Array للمستخدم
     if (!e || typeof e !== 'object') return;
 
     const time = e.time || e.minute || '';
     const type = (e.type || '').toUpperCase();
-    const player = e.playerName || e.player?.name || '';
-    const isHome = e.isHome || (e.team && String(e.team.id) === String(match.teams.home.id));
+    const player1 = e.playerName || e.player?.name || '';
+    const player2 = e.playerOut || '';
     
+    // Check if the scraping icon is there, else fallback to type parsing
+    let icon = e.icon || '⚽';
     let typeAr = type;
-    let icon = '⚽';
+    
     if (type.includes('GOAL')) { typeAr = 'هدف'; icon = '⚽'; }
-    else if (type.includes('CARD')) { typeAr = 'إنذار'; icon = '🟨'; }
+    else if (type.includes('YELLOW')) { typeAr = 'إنذار'; icon = '🟨'; }
+    else if (type.includes('RED')) { typeAr = 'طرد'; icon = '🟥'; }
+    else if (type.includes('SUB')) { typeAr = 'تبديل'; icon = '🔄'; }
 
+    // isHome check
+    const isHome = e.isHome || (e.team && String(e.team.id) === String(match.teams?.home?.id));
+    
     html += `
-      <div class="event-item" style="display:flex; align-items:center; gap:8px; font-size:13px; color:#fff; ${isHome ? 'flex-direction:row' : 'flex-direction:row-reverse'}">
-         <span style="color:var(--accent); font-weight:bold;">[${time}']</span>
-         <span>${typeAr}</span>
-         <span>- ${player}</span>
-         <span>${icon}</span>
+      <div class="event-row" style="display:flex; width:100%; align-items:center; position:relative; z-index:2;">
+         <div style="flex:1; text-align:left; padding-right:15px; display:flex; flex-direction:column; align-items:flex-end;">
+            ${isHome ? `
+                <span style="font-size:13px; font-weight:700; color:#fff;">${player1}</span>
+                ${player2 ? `<span style="font-size:11px; color:rgba(255,255,255,0.5);">خروج: ${player2}</span>` : ''}
+                <span style="font-size:11px; color:var(--accent);">${typeAr}</span>
+            ` : ''}
+         </div>
+         
+         <div style="width:40px; height:40px; border-radius:50%; background:var(--bg-card); display:flex; justify-content:center; align-items:center; border:2px solid rgba(255,255,255,0.1); flex-shrink:0;">
+            <div style="display:flex; flex-direction:column; align-items:center;">
+               <span style="font-size:14px; margin-bottom:2px;">${icon}</span>
+               <span style="font-size:10px; font-weight:800; color:#fff; background:rgba(0,0,0,0.5); padding:1px 4px; border-radius:4px; margin-top:-8px; z-index:3;">${time}'</span>
+            </div>
+         </div>
+         
+         <div style="flex:1; text-align:right; padding-left:15px; display:flex; flex-direction:column; align-items:flex-start;">
+            ${!isHome ? `
+                <span style="font-size:13px; font-weight:700; color:#fff;">${player1}</span>
+                ${player2 ? `<span style="font-size:11px; color:rgba(255,255,255,0.5);">خروج: ${player2}</span>` : ''}
+                <span style="font-size:11px; color:var(--accent);">${typeAr}</span>
+            ` : ''}
+         </div>
       </div>
     `;
   });
@@ -1013,7 +1066,7 @@ function hideLoading() {
 function openInstallWizard() { document.getElementById("install-wizard").style.display = "flex"; }
 function closeInstallWizard() { document.getElementById("install-wizard").style.display = "none"; }
 
-console.log("Korra Live SDK V32.0-FOOTBALL-NEWS-ONLY Loaded ✅");
+console.log("Korra Live SDK V33.0-REAL-DATA-EVENTS Loaded ✅");
 
 // 12. التشغيل
 window.onload = () => {
