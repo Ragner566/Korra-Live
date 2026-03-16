@@ -9,7 +9,7 @@ const fsMod = require('fs');
 
 // Expanded to catch all available free-tier competitions + Conference League
 const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC", "ELC", "DED", "PPL", "BSA", "CLI"];
-const FOOTBALL_DATA_TOKEN = process.env.FOOTBALL_DATA_TOKEN || "9668d27376c9462d9214777a8340d21e";
+const FOOTBALL_DATA_TOKEN = process.env.FOOTBALL_DATA_TOKEN || "33e62ca975a749858503fdf63b75d9d7";
 const BASE_URL = "https://api.football-data.org/v4";
 
 // ESPN league slug mapping
@@ -40,10 +40,14 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 }
 
 if (!admin.apps.length) {
-  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+  admin.initializeApp({ 
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: "https://korra-b5d32-default-rtdb.firebaseio.com"
+  });
 }
 
 const db = admin.firestore();
+const rtdb = admin.database(); // Added RTDB reference to write to Realtime Database
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ─────────────────────────────────────────────────────────────
@@ -254,24 +258,31 @@ async function sync() {
       processGroup(byDate.tomorrow,  "Tomorrow")
     ]);
 
-    // ── STEP 3: Write to Firestore ────────────────────────────
+    // ── STEP 3: Write to Firestore & RTDB ─────────────────────
     const batch1 = db.batch();
     const ts = admin.firestore.FieldValue.serverTimestamp();
 
-    const setDoc = (key, events, dateStr) => {
-      const payload = { events, lastUpdated: ts, source: "V8.0_AUTO" };
+    const setDoc = async (key, events, dateStr) => {
+      const payload = { events, lastUpdated: Date.now(), source: "V8.0_AUTO" };
+      // Firestore writes
       batch1.set(db.collection('matches').doc(key), payload);
       batch1.set(db.collection('matches').doc(dateStr), payload);
-      // Monthly Archive
       const month = dateStr.substring(0, 7);
       batch1.set(db.collection('archive').doc(month).collection('days').doc(dateStr), {
         events, createdAt: ts
       }, { merge: true });
+
+      // RTDB writes (what the UI expects)
+      await rtdb.ref(`matches/${dateStr}`).set(payload);
+      if (key === 'today') {
+           await rtdb.ref(`today_matches/${dateStr}`).set(payload);
+           await rtdb.ref(`live_matches`).set(payload);
+      }
     };
 
-    setDoc('yesterday', yEvents, yesterdayStr);
-    setDoc('today',     tEvents, todayStr);
-    setDoc('tomorrow',  tmEvents, tomorrowStr);
+    await setDoc('yesterday', yEvents, yesterdayStr);
+    await setDoc('today',     tEvents, todayStr);
+    await setDoc('tomorrow',  tmEvents, tomorrowStr);
 
     await batch1.commit();
     console.log(`\n✅ [V8.0] Sync Complete!`);

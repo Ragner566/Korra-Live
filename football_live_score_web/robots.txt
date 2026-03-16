@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Sitemap: https://korra-b5d32.web.app/sitemap.xml
+
+User-agent: GPTBot
+Disallow: /

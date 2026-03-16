@@ -1,0 +1,10 @@
+﻿node.exe : (node:12264) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors 
+that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+At C:\Users\pc\AppData\Roaming\npm\firebase.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/firebase-tools/lib/bin/fireb ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:12264) [D...ulnerabilities.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+{"deepFetched":false,"fixture":{"date":"2026-03-16T19:45:00Z","id":537104,"status":{"short":"TIMED"}},"league":{"id":"SA","logo":"https://crests.football-data.org/c111.png","name":"Serie A"},"teams":{"away":{"id":99,"logo":"https://crests.football-data.org/99.png","name":"Fiorentina"},"home":{"id":457,"logo":"https://crests.football-data.org/457.png","name":"Cremonese"}}}
