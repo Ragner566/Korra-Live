@@ -1,5 +1,5 @@
 // =============================================================
-//  Korra Live - FULL PRODUCTION CODE (V26.6-STREAM-FIX)
+//  Korra Live - FULL PRODUCTION CODE (V26.7-REAL-STREAM)
 //  HLS Player Fixes, Live Stream Priority, Node 20 Compliance
 // =============================================================
 
@@ -7,7 +7,7 @@
 let CONFIG = {
   REFRESH_INTERVAL: 120000,
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "26.6-STREAM-FIX"
+  VERSION: "26.7-REAL-STREAM"
 };
 
 let STATE = {
@@ -874,7 +874,7 @@ function hideLoading() {
 function openInstallWizard() { document.getElementById("install-wizard").style.display = "flex"; }
 function closeInstallWizard() { document.getElementById("install-wizard").style.display = "none"; }
 
-console.log("Korra Live SDK V26.6-STREAM-FIX Loaded ✅");
+console.log("Korra Live SDK V26.7-REAL-STREAM Loaded ✅");
 
 // 12. التشغيل
 window.onload = () => {

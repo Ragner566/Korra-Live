@@ -190,6 +190,7 @@ function mapMatch(m, espnData = null) {
     statistics: espnData?.stats || [],
     lineups: espnData?.lineups || null,
     deepFetched: !!espnData,
+    stream_url: ["IN_PLAY", "LIVE", "HALFTIME", "PAUSED"].includes(m.status) ? "https://live02-seg.msf.cdn.mediaset.net/live/ch-i1/i1-clr.isml/index.m3u8" : null, // Fallback/Scraped Stream URL
     streamingLinks: []
   };
 }
