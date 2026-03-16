@@ -128,7 +128,7 @@ async function fetchESPNMatchDeep(espnLeague, espnMatchId) {
         events.push({
           type:       'GOAL',
           time:       sp.clock?.displayValue || sp.period?.displayValue || '',
-          playerName: sp.athletesInvolved?.[0]?.displayName || sp.text || '',
+          playerName: sp.athletesInvolved?.[0]?.displayName || sp.shortText || sp.text || 'لاعب',
           isHome,
           icon:       '⚽'
         });
@@ -147,7 +147,7 @@ async function fetchESPNMatchDeep(espnLeague, espnMatchId) {
           events.push({
             type: typeText.includes('red') ? 'RED_CARD' : 'YELLOW_CARD',
             time: ke.clock?.displayValue || ke.period?.displayValue || '',
-            playerName: ke.athletesInvolved?.[0]?.displayName || '',
+            playerName: ke.athletesInvolved?.[0]?.displayName || ke.shortText || ke.text || 'لاعب',
             isHome,
             icon: typeText.includes('red') ? '🟥' : '🟨'
           });
@@ -155,7 +155,7 @@ async function fetchESPNMatchDeep(espnLeague, espnMatchId) {
           events.push({
             type: 'SUBSTITUTION',
             time: ke.clock?.displayValue || '',
-            playerName: ke.athletesInvolved?.[0]?.displayName || '',
+            playerName: ke.athletesInvolved?.[0]?.displayName || ke.shortText || 'تبديل',
             playerOut: ke.athletesInvolved?.[1]?.displayName || '',
             isHome,
             icon: '🔄'

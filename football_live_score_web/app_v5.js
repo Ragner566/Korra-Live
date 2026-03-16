@@ -1,5 +1,5 @@
 // =============================================================
-//  Korra Live - FULL PRODUCTION CODE (V33.0-REAL-DATA-EVENTS)
+//  Korra Live - FULL PRODUCTION CODE (V33.1-FINAL-POLISH)
 //  Hybrid Player, Iframe CORS Bypass, Smart Auto-Fallback
 //  Football News + Live Match Events Timeline (Firebase Sync)
 // =============================================================
@@ -8,7 +8,7 @@
 let CONFIG = {
   REFRESH_INTERVAL: 120000,
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "33.0-REAL-DATA-EVENTS"
+  VERSION: "33.1-FINAL-POLISH"
 };
 
 let STATE = {
@@ -402,10 +402,13 @@ function processMatches(matches) {
     if (!match.fixture) match.fixture = { status: {} };
     if (!match.teams) match.teams = { home: {}, away: {} };
 
-    const startTime = match.fixture.timestamp ? match.fixture.timestamp * 1000 : 0;
+    let startTime = match.fixture.timestamp ? match.fixture.timestamp * 1000 : 0;
+    if (!startTime && match.fixture.date) {
+        startTime = new Date(match.fixture.date).getTime();
+    }
 
     // V32.0: Removed hardcoded score overrides — scores come only from real Firebase data
-    if (startTime > 0 && now > (startTime + 110 * 60 * 1000) && !isFinished(match.fixture.status.short)) {
+    if (startTime > 0 && now > (startTime + 120 * 60 * 1000) && !isFinished(match.fixture.status.short)) {
       match.fixture.status.short = 'FINISHED';
     }
     return match;
@@ -754,7 +757,12 @@ function renderEvents(events, match) {
 
     const time = e.time || e.minute || '';
     const type = (e.type || '').toUpperCase();
-    const player1 = e.playerName || e.player?.name || '';
+    
+    // Check multiple locations for player name, fallback to short string
+    let player1 = e.playerName || e.player?.name || e.detail || e.text || e.shortText || '';
+    if (player1.includes(' - ')) player1 = player1.split(' - ')[0]; // cleanup long strings
+    if (player1.length > 30) player1 = player1.substring(0, 30) + '...';
+    
     const player2 = e.playerOut || '';
     
     // Check if the scraping icon is there, else fallback to type parsing
@@ -773,9 +781,11 @@ function renderEvents(events, match) {
       <div class="event-row" style="display:flex; width:100%; align-items:center; position:relative; z-index:2;">
          <div style="flex:1; text-align:left; padding-right:15px; display:flex; flex-direction:column; align-items:flex-end;">
             ${isHome ? `
-                <span style="font-size:13px; font-weight:700; color:#fff;">${player1}</span>
+                <div style="display:flex; align-items:center; gap:5px;">
+                   <span style="font-size:13px; font-weight:700; color:#fff;">${player1}</span>
+                </div>
                 ${player2 ? `<span style="font-size:11px; color:rgba(255,255,255,0.5);">خروج: ${player2}</span>` : ''}
-                <span style="font-size:11px; color:var(--accent);">${typeAr}</span>
+                <span style="font-size:11px; color:var(--accent); margin-top:2px;">${typeAr}</span>
             ` : ''}
          </div>
          
@@ -788,9 +798,11 @@ function renderEvents(events, match) {
          
          <div style="flex:1; text-align:right; padding-left:15px; display:flex; flex-direction:column; align-items:flex-start;">
             ${!isHome ? `
-                <span style="font-size:13px; font-weight:700; color:#fff;">${player1}</span>
+                <div style="display:flex; align-items:center; gap:5px;">
+                   <span style="font-size:13px; font-weight:700; color:#fff;">${player1}</span>
+                </div>
                 ${player2 ? `<span style="font-size:11px; color:rgba(255,255,255,0.5);">خروج: ${player2}</span>` : ''}
-                <span style="font-size:11px; color:var(--accent);">${typeAr}</span>
+                <span style="font-size:11px; color:var(--accent); margin-top:2px;">${typeAr}</span>
             ` : ''}
          </div>
       </div>
@@ -1066,7 +1078,7 @@ function hideLoading() {
 function openInstallWizard() { document.getElementById("install-wizard").style.display = "flex"; }
 function closeInstallWizard() { document.getElementById("install-wizard").style.display = "none"; }
 
-console.log("Korra Live SDK V33.0-REAL-DATA-EVENTS Loaded ✅");
+console.log("Korra Live SDK V33.1-FINAL-POLISH Loaded ✅");
 
 // 12. التشغيل
 window.onload = () => {
