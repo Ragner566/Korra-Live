@@ -1,13 +1,13 @@
 // =============================================================
-//  Korra Live - FULL PRODUCTION CODE (V26.7-REAL-STREAM)
-//  HLS Player Fixes, Live Stream Priority, Node 20 Compliance
+//  Korra Live - FULL PRODUCTION CODE (V26.8-STABLE-STREAM)
+//  HLS Low Latency, CORS Fallback, Auto Server 2
 // =============================================================
 
 // 1. الإعدادات والحالة (CONFIG & STATE)
 let CONFIG = {
   REFRESH_INTERVAL: 120000,
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "26.7-REAL-STREAM"
+  VERSION: "26.8-STABLE-STREAM"
 };
 
 let STATE = {
@@ -777,17 +777,89 @@ function initHlsPlayer(match) {
   const video = document.getElementById('hls-video');
   if (!video) return;
 
+  const fallbackStream = "https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8"; // Global RedBull TV Sports stream
+
+  const showServer2 = () => {
+    if (document.getElementById('server2-btn')) return;
+    const container = document.getElementById('modal-stream-container');
+    if (!container) return;
+    const btn = document.createElement('button');
+    btn.id = 'server2-btn';
+    btn.innerHTML = '📺 السيرفر 2 (Global)';
+    btn.className = 'standings-league-btn active';
+    btn.style.position = 'absolute';
+    btn.style.top = '10px';
+    btn.style.left = '10px';
+    btn.style.zIndex = '9999';
+    btn.style.padding = '8px 12px';
+    btn.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+    btn.onclick = () => {
+        if (Hls.isSupported() && window.activeHls) {
+          window.activeHls.loadSource(fallbackStream);
+          window.activeHls.startLoad();
+          video.play();
+        } else {
+          video.src = fallbackStream;
+          video.play();
+        }
+        btn.innerHTML = '✅ يعمل على السيرفر 2';
+        setTimeout(() => btn.remove(), 2000);
+    };
+    container.appendChild(btn);
+  };
+
+  let startTimeout = setTimeout(() => {
+     console.warn("Stream taking too long to load. Showing Server 2 fallback.");
+     showServer2();
+  }, 10000);
+
   if (Hls.isSupported()) {
-    const hls = new Hls();
+    if (window.activeHls) window.activeHls.destroy();
+
+    const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        xhrSetup: function(xhr, url) {
+            xhr.withCredentials = false; // Bypass basic CORS restrictions
+        }
+    });
+    window.activeHls = hls;
+
     hls.loadSource(streamUrl);
     hls.attachMedia(video);
+
     hls.on(Hls.Events.MANIFEST_PARSED, function() {
+      clearTimeout(startTimeout);
       video.play();
     });
+
+    hls.on(Hls.Events.ERROR, function(event, data) {
+        if (data.fatal) {
+            clearTimeout(startTimeout);
+            showServer2();
+            switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                    hls.startLoad();
+                    break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                    hls.recoverMediaError();
+                    break;
+                default:
+                    hls.destroy();
+                    break;
+            }
+        }
+    });
+
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = streamUrl;
     video.addEventListener('loadedmetadata', function() {
+      clearTimeout(startTimeout);
       video.play();
+    });
+    video.addEventListener('error', function() {
+      clearTimeout(startTimeout);
+      showServer2();
     });
   }
 }
@@ -874,7 +946,7 @@ function hideLoading() {
 function openInstallWizard() { document.getElementById("install-wizard").style.display = "flex"; }
 function closeInstallWizard() { document.getElementById("install-wizard").style.display = "none"; }
 
-console.log("Korra Live SDK V26.7-REAL-STREAM Loaded ✅");
+console.log("Korra Live SDK V26.8-STABLE-STREAM Loaded ✅");
 
 // 12. التشغيل
 window.onload = () => {
