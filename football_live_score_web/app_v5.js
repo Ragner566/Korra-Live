@@ -1,13 +1,14 @@
 // =============================================================
-//  Korra Live - FULL PRODUCTION CODE (V30.0-FINAL-STABLE)
+//  Korra Live - FULL PRODUCTION CODE (V32.0-FOOTBALL-NEWS-ONLY)
 //  Hybrid Player, Iframe CORS Bypass, Smart Auto-Fallback
+//  Football News: Transfers, Injuries, Club News — Real Data Only
 // =============================================================
 
 // 1. الإعدادات والحالة (CONFIG & STATE)
 let CONFIG = {
   REFRESH_INTERVAL: 120000,
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "30.0-STABLE"
+  VERSION: "32.0-FOOTBALL-NEWS-ONLY"
 };
 
 let STATE = {
@@ -240,38 +241,113 @@ function renderStandings(table) {
     container.innerHTML = html;
 }
 
-// 4.1 جلب الأخبار من Firebase RTDB (V26.2 - graceful if path missing)
+// 4.1 جلب الأخبار من Firebase RTDB (V32.0 - Football News Only)
+// DB Structure: news/{ id: { title, description, image_url, source_link, timestamp, category } }
 function fetchNews() {
     const container = document.getElementById("news-list");
     if (!container) return;
-    container.innerHTML = `<div style="text-align:center;padding:30px;"><div class="loading-spinner" style="margin:0 auto;"></div></div>`;
+
+    // Show loading state
+    container.innerHTML = `
+        <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.5);">
+            <div class="loading-spinner" style="margin:0 auto 15px;"></div>
+            <p style="font-size:13px;">Fetching latest football updates...</p>
+        </div>`;
 
     if (typeof firebase === 'undefined' || !firebase.database) {
-        container.innerHTML = noDataHTML('فار فا نيوزپپر', 'الأخبار غير متاحة - Firebase لم يبدأ');
+        container.innerHTML = noDataHTML('far fa-newspaper', 'الأخبار غير متاحة - Firebase لم يبدأ');
         return;
     }
 
-    console.log('[V26.2] Fetching news from RTDB: news');
-    firebase.database().ref('news').once('value').then(snapshot => {
-        const data = snapshot.val();
-        if (!data) {
-            container.innerHTML = noDataHTML('far fa-newspaper', 'لا تتوفر أخبار حالياً — سيتم إضافتها قريباً');
-            return;
+    console.log('[V32.0] Fetching football news from RTDB: news');
+
+    // Race timeout vs RTDB fetch
+    const rtdbPromise = firebase.database().ref('news').once('value');
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 8000));
+
+    Promise.race([rtdbPromise, timeoutPromise]).then(snapshot => {
+        const data = snapshot.val ? snapshot.val() : snapshot;
+        renderNewsArticles(data, container);
+    }).catch(err => {
+        if (err.message === 'TIMEOUT') {
+            // REST fallback
+            console.warn('[V32.0] WS timeout, falling back to REST...');
+            fetch('https://korra-b5d32-default-rtdb.firebaseio.com/news.json?orderBy="timestamp"&limitToLast=30')
+                .then(r => r.json())
+                .then(data => renderNewsArticles(data, container))
+                .catch(() => {
+                    container.innerHTML = noDataHTML('far fa-newspaper', 'Fetching latest football updates...');
+                });
+        } else {
+            console.error('[V32.0] RTDB news error:', err);
+            container.innerHTML = noDataHTML('fas fa-exclamation-circle', `خطأ في جلب الأخبار: ${err.message}`);
         }
-        const articles = Array.isArray(data) ? data : Object.values(data);
-        container.innerHTML = articles.slice(0, 20).map(a => `
-            <div style="background:var(--bg-card);border-radius:14px;overflow:hidden;border:1px solid var(--border);cursor:pointer;" onclick="${a.url ? `window.open('${a.url}','_blank')` : ''}">
-                ${a.image || a.urlToImage ? `<img src="${a.image || a.urlToImage}" style="width:100%;height:160px;object-fit:cover;" onerror="this.style.display='none'">` : ''}
-                <div style="padding:12px;">
-                    <p style="margin:0;font-weight:700;font-size:14px;line-height:1.5;color:var(--text-primary);">${a.title || ''}</p>
-                    ${a.source ? `<p style="margin:6px 0 0;font-size:11px;color:var(--accent);">${typeof a.source === 'object' ? a.source.name : a.source}</p>` : ''}
+    });
+}
+
+function renderNewsArticles(data, container) {
+    // Filter out meta entries and sort by timestamp
+    if (!data || typeof data !== 'object') {
+        container.innerHTML = `
+            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.5);">
+                <i class="far fa-newspaper" style="font-size:44px;opacity:0.15;display:block;margin-bottom:16px;"></i>
+                <p style="font-size:13px;">Fetching latest football updates...</p>
+            </div>`;
+        return;
+    }
+
+    let articles = Object.values(data)
+        .filter(a => a && typeof a === 'object' && a.title && !a._meta && !a.status)
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 30);
+
+    if (articles.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.5);">
+                <i class="far fa-newspaper" style="font-size:44px;opacity:0.15;display:block;margin-bottom:16px;"></i>
+                <p style="font-size:13px;">Fetching latest football updates...</p>
+            </div>`;
+        return;
+    }
+
+    // Category badge colors
+    const catColor = { transfer: '#00ffa3', injury: '#ff6b6b', club: '#4ecdc4', general: 'rgba(255,255,255,0.4)' };
+    const catLabel = { transfer: '🔄 انتقال', injury: '🏥 إصابة', club: '🏟️ أخبار', general: '⚽ كرة القدم' };
+
+    container.innerHTML = articles.map(a => {
+        const imgUrl     = a.image_url || a.image || a.urlToImage || '';
+        const sourceLink = a.source_link || a.link || a.url || '#';
+        const cat        = a.category || 'general';
+        const timeAgo    = a.timestamp ? getTimeAgo(a.timestamp) : '';
+
+        return `
+            <div style="background:var(--bg-card);border-radius:14px;overflow:hidden;border:1px solid var(--border);cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;"
+                 onclick="window.open('${sourceLink}','_blank')"
+                 onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(0,255,163,0.08)';"
+                 onmouseout="this.style.transform='';this.style.boxShadow='';">
+                ${imgUrl ? `<img src="${imgUrl}" style="width:100%;height:175px;object-fit:cover;" onerror="this.style.display='none'">` : ''}
+                <div style="padding:12px 14px;">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                        <span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:10px;color:#000;background:${catColor[cat] || 'rgba(255,255,255,0.3)'}">${catLabel[cat] || '⚽'}</span>
+                        ${timeAgo ? `<span style="font-size:10px;color:rgba(255,255,255,0.3);">${timeAgo}</span>` : ''}
+                    </div>
+                    <p style="margin:0;font-weight:700;font-size:13px;line-height:1.55;color:var(--text-primary);">${a.title}</p>
+                    ${a.description ? `<p style="margin:6px 0 0;font-size:11px;color:rgba(255,255,255,0.45);line-height:1.5;">${a.description.substring(0, 120)}...</p>` : ''}
+                    <p style="margin:8px 0 0;font-size:10px;color:var(--accent);font-weight:600;">📰 ${a.source || 'Football News'}</p>
                 </div>
             </div>
-        `).join('');
-    }).catch(err => {
-        console.error('[V26.2] RTDB news error:', err);
-        container.innerHTML = noDataHTML('fas fa-exclamation-circle', `خطأ في جلب الأخبار: ${err.message}`);
-    });
+        `;
+    }).join('');
+}
+
+function getTimeAgo(timestamp) {
+    const diffMs  = Date.now() - timestamp;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 2)   return 'الآن';
+    if (diffMin < 60)  return `${diffMin}د`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24)    return `${diffH}س`;
+    return `${Math.floor(diffH / 24)}ي`;
 }
 
 // 4.2 جلب الملخصات/Highlights من Firebase RTDB (V26.2 - graceful)
@@ -326,22 +402,9 @@ function processMatches(matches) {
     if (!match.fixture) match.fixture = { status: {} };
     if (!match.teams) match.teams = { home: {}, away: {} };
 
-    const hn = (match.teams.home.name || '').toLowerCase();
-    const an = (match.teams.away.name || '').toLowerCase();
     const startTime = match.fixture.timestamp ? match.fixture.timestamp * 1000 : 0;
 
-    // تثبيت نتيجة ريال مدريد
-    if (hn.includes('real madrid') || an.includes('real madrid')) {
-      match.fixture.status.short = 'FINISHED';
-      if (!match.goals) match.goals = {};
-      
-      if (hn.includes('real madrid')) {
-        match.goals.home = 4; match.goals.away = 1;
-      } else {
-        match.goals.away = 4; match.goals.home = 1;
-      }
-    }
-
+    // V32.0: Removed hardcoded score overrides — scores come only from real Firebase data
     if (startTime > 0 && now > (startTime + 110 * 60 * 1000) && !isFinished(match.fixture.status.short)) {
       match.fixture.status.short = 'FINISHED';
     }
@@ -950,7 +1013,7 @@ function hideLoading() {
 function openInstallWizard() { document.getElementById("install-wizard").style.display = "flex"; }
 function closeInstallWizard() { document.getElementById("install-wizard").style.display = "none"; }
 
-console.log("Korra Live SDK V30.0-STABLE Loaded ✅");
+console.log("Korra Live SDK V32.0-FOOTBALL-NEWS-ONLY Loaded ✅");
 
 // 12. التشغيل
 window.onload = () => {
