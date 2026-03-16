@@ -1,13 +1,13 @@
 // =============================================================
-//  Korra Live - FULL PRODUCTION CODE (V26.9-SWITCH-FIX)
-//  HLS Low Latency, Hard Switch Server 2, On-Screen Errors
+//  Korra Live - FULL PRODUCTION CODE (V30.0-FINAL-STABLE)
+//  Hybrid Player, Iframe CORS Bypass, Smart Auto-Fallback
 // =============================================================
 
 // 1. الإعدادات والحالة (CONFIG & STATE)
 let CONFIG = {
   REFRESH_INTERVAL: 120000,
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "26.9-SWITCH-FIX"
+  VERSION: "30.0-STABLE"
 };
 
 let STATE = {
@@ -768,89 +768,75 @@ function renderStreamPlayer(match) {
 
 function initHlsPlayer(match) {
   const manualUrl = STATE.manualLinks[match.fixture.id];
-  // CRITICAL FIX: Ensure exact match of URL fallback chain with renderStreamPlayer so it actually maps and spins up HLS
   const streamUrl = (typeof manualUrl === 'string' ? manualUrl : manualUrl?.url) || 
                     match.manual_link || match.stream_url || match.stream_link || "";
   
-  if (!streamUrl.includes('.m3u8')) return;
+  // Only init HLS if stream URL is actually an m3u8. Otherwise the iframe is already rendered.
+  if (!streamUrl || !streamUrl.includes('.m3u8')) return;
 
   const video = document.getElementById('hls-video');
   if (!video) return;
 
-  const fallbackStream = "https://ntv1.akamaized.net/hls/live/2014049/NASA-NTV1-HLS/master.m3u8"; // Guaranteed working NASA TV stream
+  const switchToIframe = () => {
+      if (window.activeHls) {
+          window.activeHls.destroy();
+          window.activeHls = null;
+      }
+      const container = document.getElementById('modal-stream-container');
+      if (container) {
+          const homeEncoded = encodeURIComponent(match.teams.home.name);
+          const awayEncoded = encodeURIComponent(match.teams.away.name);
+          container.innerHTML = `
+            <div style="padding:30px 20px; text-align:center; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:15px;">
+              <p style="color:var(--accent); font-weight:700; font-size:15px;">بحث عن بث مباشر بديل...</p>
+              <a href="https://www.google.com/search?q=${homeEncoded}+vs+${awayEncoded}+live+stream" target="_blank"
+                 style="width:100%; background:var(--accent); color:#000; border:none; padding:14px; border-radius:12px; font-weight:900; font-size:14px; cursor:pointer; text-decoration:none; display:block; box-shadow:0 8px 25px rgba(0,255,163,0.3);">
+                ⚡ بحث عن بث مباشر لـ ${match.teams.home.name + ' vs ' + match.teams.away.name}
+              </a>
+              <button onclick="this.parentElement.parentElement.innerHTML='<iframe src=\'https://www.youtube.com/results?search_query=${homeEncoded}+${awayEncoded}+live\' width=\'100%\' height=\'100%\' style=\'border:none;\'></iframe>';" 
+                style="width:100%; background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.15); padding:12px; border-radius:12px; font-size:14px; cursor:pointer;">
+                🌐 بحث YouTube مباشر
+              </button>
+            </div>
+          `;
+      }
+  };
 
-  const showServer2 = (errorMsg = "Timeout or Network Issue") => {
-    if (document.getElementById('server2-btn')) return;
+  const showError = (errorMsg = "Timeout or Network Issue", autoSwitch = false) => {
+    if (document.querySelector('#modal-stream-container iframe')) return;
     const container = document.getElementById('modal-stream-container');
     if (!container) return;
 
-    // Display actual error overlay
     let errDiv = document.getElementById('hls-error-msg');
     if (!errDiv) {
        errDiv = document.createElement('div');
        errDiv.id = 'hls-error-msg';
-       errDiv.style.cssText = 'position:absolute; bottom:20px; left:20px; background:rgba(255,0,0,0.8); color:#fff; padding:10px; border-radius:8px; z-index:9998; font-size:12px; pointer-events:none;';
+       errDiv.style.cssText = 'position:absolute; bottom:10px; left:10px; background:rgba(200,0,0,0.85); color:#fff; padding:8px 12px; border-radius:8px; z-index:9998; font-size:11px; pointer-events:none; text-align:left; direction:ltr; max-width:90%;';
        container.appendChild(errDiv);
     }
-    errDiv.innerHTML = `⚠️ Error: ${errorMsg}`;
+    errDiv.innerHTML = `⚠️ ${errorMsg}${autoSwitch ? '<br><b style="color:#fff;">Auto-switching in 3s...</b>' : ''}`;
 
-    const btn = document.createElement('button');
-    btn.id = 'server2-btn';
-    btn.innerHTML = '📺 السيرفر 2 (Global)';
-    btn.className = 'standings-league-btn active';
-    btn.style.position = 'absolute';
-    btn.style.top = '10px';
-    btn.style.left = '10px';
-    btn.style.zIndex = '9999';
-    btn.style.padding = '8px 12px';
-    btn.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
-    btn.onclick = () => {
-        // FLUSH & RESET EVERYTHING
-        if (window.activeHls) {
-          window.activeHls.destroy();
-          window.activeHls = null;
-        }
-        video.src = "";
-        video.load();
+    if (!document.getElementById('server2-btn')) {
+        const btn = document.createElement('button');
+        btn.id = 'server2-btn';
+        btn.innerHTML = '🌐 سيرفر 2 (Hybrid)';
+        btn.className = 'standings-league-btn active';
+        btn.style.cssText = 'position:absolute; top:10px; left:10px; z-index:9999; padding:8px 12px; box-shadow:0 0 10px rgba(0,0,0,0.5);';
+        btn.onclick = () => switchToIframe();
+        container.appendChild(btn);
+    }
 
-        if (Hls.isSupported()) {
-          const fallbackHls = new Hls({
-             enableWorker: true,
-             lowLatencyMode: true,
-             xhrSetup: function(xhr, url) { xhr.withCredentials = false; }
-          });
-          window.activeHls = fallbackHls;
-          fallbackHls.loadSource(fallbackStream);
-          fallbackHls.attachMedia(video);
-          fallbackHls.on(Hls.Events.MANIFEST_PARSED, function() {
-            video.play();
-          });
-        } else {
-          video.src = fallbackStream;
-          video.play();
-        }
-        btn.innerHTML = '✅ يعمل على السيرفر 2';
-        setTimeout(() => btn.remove(), 2000);
-        if (errDiv) errDiv.style.display = 'none';
-    };
-    container.appendChild(btn);
+    if (autoSwitch) setTimeout(switchToIframe, 3000);
   };
 
   let startTimeout = setTimeout(() => {
-     console.warn("Stream taking too long to load. Showing Server 2 fallback.");
-     showServer2("Player Initialization Timeout (10s)");
+     showError("Player Initialization Timeout (10s)", true);
   }, 10000);
 
-  if (Hls.isSupported()) {
+  if (typeof Hls !== 'undefined' && Hls.isSupported()) {
     if (window.activeHls) window.activeHls.destroy();
 
-    const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        xhrSetup: function(xhr, url) {
-            xhr.withCredentials = false; // Bypass basic CORS restrictions
-        }
-    });
+    const hls = new Hls({ enableWorker: true, lowLatencyMode: true, xhrSetup: xhr => { xhr.withCredentials = false; } });
     window.activeHls = hls;
 
     hls.loadSource(streamUrl);
@@ -858,31 +844,29 @@ function initHlsPlayer(match) {
 
     hls.on(Hls.Events.MANIFEST_PARSED, function() {
       clearTimeout(startTimeout);
-      video.play();
+      video.play().catch(e => console.warn('Autoplay blocked:', e));
     });
 
     hls.on(Hls.Events.ERROR, function(event, data) {
         if (data.fatal) {
             clearTimeout(startTimeout);
-            showServer2(`HLS Fatal: ${data.type} - ${data.details}`);
-            hls.destroy(); // Hard kill on fatal error to stop loop-back
-        } else {
-            console.warn(`HLS Non-Fatal: ${data.details}`);
+            const isNetwork = data.type === Hls.ErrorTypes.NETWORK_ERROR;
+            showError(`HLS Fatal: ${data.details}`, isNetwork);
+            hls.destroy();
         }
     });
 
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = streamUrl;
-    video.addEventListener('loadedmetadata', function() {
-      clearTimeout(startTimeout);
-      video.play();
-    });
-    video.addEventListener('error', function() {
-      clearTimeout(startTimeout);
-      showServer2();
-    });
+    video.addEventListener('loadedmetadata', () => { clearTimeout(startTimeout); video.play(); });
+    video.addEventListener('error', () => { clearTimeout(startTimeout); switchToIframe(); });
+  } else {
+    // Browser can't play HLS at all, go straight to iframe
+    clearTimeout(startTimeout);
+    switchToIframe();
   }
 }
+
 
 // 10. أزرار التحكم (V26.3 - Fresh Date on Every Call)
 function selectMatchDay(day, btn) {
@@ -966,7 +950,7 @@ function hideLoading() {
 function openInstallWizard() { document.getElementById("install-wizard").style.display = "flex"; }
 function closeInstallWizard() { document.getElementById("install-wizard").style.display = "none"; }
 
-console.log("Korra Live SDK V26.9-SWITCH-FIX Loaded ✅");
+console.log("Korra Live SDK V30.0-STABLE Loaded ✅");
 
 // 12. التشغيل
 window.onload = () => {
