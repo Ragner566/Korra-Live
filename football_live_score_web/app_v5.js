@@ -1,13 +1,13 @@
 // =============================================================
-//  Korra Live - FULL PRODUCTION CODE (V26.5-CONNECTION-FIX)
-//  REST Fallback · Stable WS Connections · Object/Array Array Mapping
+//  Korra Live - FULL PRODUCTION CODE (V26.6-STREAM-FIX)
+//  HLS Player Fixes, Live Stream Priority, Node 20 Compliance
 // =============================================================
 
 // 1. الإعدادات والحالة (CONFIG & STATE)
 let CONFIG = {
   REFRESH_INTERVAL: 120000,
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "26.5-CONNECTION-FIX"
+  VERSION: "26.6-STREAM-FIX"
 };
 
 let STATE = {
@@ -768,7 +768,10 @@ function renderStreamPlayer(match) {
 
 function initHlsPlayer(match) {
   const manualUrl = STATE.manualLinks[match.fixture.id];
-  const streamUrl = manualUrl || match.stream_link || "";
+  // CRITICAL FIX: Ensure exact match of URL fallback chain with renderStreamPlayer so it actually maps and spins up HLS
+  const streamUrl = (typeof manualUrl === 'string' ? manualUrl : manualUrl?.url) || 
+                    match.manual_link || match.stream_url || match.stream_link || "";
+  
   if (!streamUrl.includes('.m3u8')) return;
 
   const video = document.getElementById('hls-video');
@@ -871,7 +874,7 @@ function hideLoading() {
 function openInstallWizard() { document.getElementById("install-wizard").style.display = "flex"; }
 function closeInstallWizard() { document.getElementById("install-wizard").style.display = "none"; }
 
-console.log("Korra Live SDK V26.5-CONNECTION-FIX Loaded ✅");
+console.log("Korra Live SDK V26.6-STREAM-FIX Loaded ✅");
 
 // 12. التشغيل
 window.onload = () => {
