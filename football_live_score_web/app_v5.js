@@ -1,14 +1,14 @@
 // =============================================================
-//  Korra Live - FULL PRODUCTION CODE (V33.1-FINAL-POLISH)
+//  Korra Live - FULL PRODUCTION CODE (V34.0-MEGA-UPDATE)
 //  Hybrid Player, Iframe CORS Bypass, Smart Auto-Fallback
 //  Football News + Live Match Events Timeline (Firebase Sync)
 // =============================================================
 
 // 1. الإعدادات والحالة (CONFIG & STATE)
 let CONFIG = {
-  REFRESH_INTERVAL: 120000,
+  REFRESH_INTERVAL: 30000,   // 30s — fast update visibility
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "33.1-FINAL-POLISH"
+  VERSION: "V40.0-PRO-LIVE"
 };
 
 let STATE = {
@@ -29,18 +29,8 @@ let STATE = {
   _adCounter: 0
 };
 
-// 1.1 إتاحة الدوال للتحميل من الـ HTML مبكراً
-window.selectMatchDay = selectMatchDay;
-window.filterByLeague = filterByLeague;
-window.refreshData = refreshData;
-window.toggleLanguage = toggleLanguage;
-window.closeModal = closeModal;
-window.switchModalTab = switchModalTab;
-window.openMatchDetail = openMatchDetail;
-window.openInstallWizard = openInstallWizard;
-window.closeInstallWizard = closeInstallWizard;
-window.switchPage = switchPage;
-window.fetchStandings = fetchStandings;
+// 1.1 دوال عامة — تُضاف بعد تعريف كل الدوال في window.onload
+// (يتم إسناد window.xxx في نهاية الملف لضمان وجود الدوال قبل الإسناد)
 
 // 2. الترجمة (i18n)
 const i18n = {
@@ -103,6 +93,8 @@ function switchPage(page, btn, event) {
     document.querySelector('.news-page').style.display = 'none';
     document.querySelector('.replays-page').style.display = 'none';
     document.querySelector('#live-tv-page').style.display = 'none';
+    const tvChanPage = document.querySelector('#tv-channels-page');
+    if (tvChanPage) tvChanPage.style.display = 'none';
     
     if (page === 'matches') {
         document.querySelector('.main-feed').style.display = 'block';
@@ -117,6 +109,10 @@ function switchPage(page, btn, event) {
         fetchHighlights();
     } else if (page === 'live-tv') {
         document.querySelector('#live-tv-page').style.display = 'block';
+        renderLiveTVChannels(); // V34.0: load channels grid
+    } else if (page === 'tv-channels') {
+        if (tvChanPage) tvChanPage.style.display = 'block';
+        renderLiveTVChannels('tv-channels-grid', 'tv-channels-count'); // V34.0: dedicated TV channels tab
     }
 }
 
@@ -623,8 +619,17 @@ function matchCardHTML(match, type) {
   const homeName = teams.home?.name || 'الفريق المحلي';
   const awayName = teams.away?.name || 'الفريق الضيف';
 
+  // V40.0: HAS_LIVE_STREAM badge — pulsing red when stream available
+  const hasStream  = match.HAS_LIVE_STREAM || STATE.manualLinks[String(fixture.id)];
+  const isLiveMatch = type === 'live';
+  const streamBadge = hasStream
+    ? `<div style="position:absolute;top:6px;left:6px;z-index:2;display:flex;align-items:center;gap:4px;background:rgba(255,45,85,0.15);border:1px solid rgba(255,45,85,0.4);color:#ff2d55;font-size:9px;font-weight:900;padding:3px 8px;border-radius:8px;letter-spacing:0.5px;"><span style="width:6px;height:6px;border-radius:50%;background:#ff2d55;display:inline-block;animation:livePulse 1.2s ease-in-out infinite;"></span>📡 LIVE</div>`
+    : '';
+  const liveBorder = isLiveMatch ? 'border-color:rgba(255,45,85,0.5);box-shadow:0 0 0 1px rgba(255,45,85,0.2);' : '';
+
   return `
-    <div class="match-card ${type}" onclick="openMatchDetail('${fixture.id}')">
+    <div class="match-card ${type}" onclick="openMatchDetail('${fixture.id}')" style="position:relative;${liveBorder}">
+      ${streamBadge}
       <div class="match-card-header">
         <img src="${league.logo || ''}" width="18" onerror="this.style.display='none'"> 
         <span>${league.name || ''}</span>
@@ -636,7 +641,7 @@ function matchCardHTML(match, type) {
         </div>
         <div class="match-score-box">
           <div class="score-text">${timeDisplay}</div>
-          <div class="match-status">${type === 'live' ? '● مباشر' : (type === 'finished' ? 'FT' : '')}</div>
+          <div class="match-status">${isLiveMatch ? '<span style="color:#ff2d55;animation:livePulse 1.2s infinite;">● مباشر</span>' : (type === 'finished' ? 'FT' : '')}</div>
         </div>
         <div class="match-team">
           <img src="${awayLogo}" class="team-logo" onerror="this.style.display='none'">
@@ -662,6 +667,10 @@ async function openMatchDetail(fixtureId) {
 
   updateModalContent(fixtureId);
   fetchMatchEvents(fixtureId); // V33.0 Fetch realtime events
+
+  // V36.0: Auto-switch to stream tab if a live link exists AND modal is freshly opened
+  const hasStream = match && (match.HAS_LIVE_STREAM || STATE.manualLinks[String(fixtureId)]);
+  STATE.activeModalTab = hasStream ? 'stream' : 'events';
 }
 
 function updateModalContent(fixtureId) {
@@ -688,7 +697,7 @@ function updateModalContent(fixtureId) {
            </div>
            <div class="m-score">
               <h1 style="margin:0; font-size:36px; letter-spacing:5px;">${match.goals?.home ?? 0}:${match.goals?.away ?? 0}</h1>
-              <span style="font-size:12px; color:var(--accent);">${isLive(match.fixture.status.short) ? 'مباشر' : ''}</span>
+              <span style="font-size:12px; color:var(--accent);">${isLive(match.fixture.status.short) && !isFinished(match.fixture.status.short) ? 'مباشر' : ''}</span>
            </div>
            <div class="m-team" style="text-align:center;">
               <img src="${match.teams.away.logo}" style="width:60px; height:60px; object-fit:contain; margin-bottom:10px;">
@@ -707,14 +716,12 @@ function updateModalContent(fixtureId) {
     <div id="modal-events" class="tab-content" style="display: ${STATE.activeModalTab === 'events' ? 'block' : 'none'}; padding:20px; max-height:350px; overflow-y:auto;">${renderEvents(match.events, match)}</div>
     <div id="modal-stats" class="tab-content" style="display: ${STATE.activeModalTab === 'stats' ? 'block' : 'none'}; padding:20px;">${renderStats(match.statistics)}</div>
     <div id="modal-lineups" class="tab-content" style="display: ${STATE.activeModalTab === 'lineups' ? 'block' : 'none'}; padding:20px;">${renderLineups(match.lineups, match)}</div>
-    <div id="modal-stream" class="tab-content" style="display: ${STATE.activeModalTab === 'stream' ? 'block' : 'none'}; padding:15px; height:320px;">
-        <div class="video-container" id="modal-stream-container" style="width:100%; height:100%; background:#000; border-radius:12px; overflow:hidden; position:relative;">
-            ${renderStreamPlayer(match)}
-        </div>
+    <div id="modal-stream" class="tab-content" style="display: ${STATE.activeModalTab === 'stream' ? 'block' : 'none'}; padding:0;">
+        ${renderStreamPlayer(match)}
     </div>
   `;
   
-  if (STATE.activeModalTab === 'stream') initHlsPlayer(match);
+  if (STATE.activeModalTab === 'stream') { /* player renders itself */ }
 }
 
 // 8.1 جلب الأحداث المباشرة من node match_events (V33.0)
@@ -748,7 +755,7 @@ function renderEvents(events, match) {
     return `<div style="text-align:center; padding:50px 20px; color:rgba(255,255,255,0.4); font-size:13px;"><div class="loading-spinner" style="margin: 0 auto 15px;"></div>جاري جلب أحداث المباراة...</div>`;
   }
   
-  // V33.0 Timeline UI
+  // V34.0 Timeline UI — ⚽ icon shown with player name
   let html = `<div class="events-timeline" style="position:relative; padding:10px 0; display:flex; flex-direction:column; gap:16px;">
                  <div style="position:absolute; left:50%; top:0; bottom:0; width:2px; background:rgba(255,255,255,0.1); transform:translateX(-50%);"></div>`;
   
@@ -758,31 +765,36 @@ function renderEvents(events, match) {
     const time = e.time || e.minute || '';
     const type = (e.type || '').toUpperCase();
     
-    // Check multiple locations for player name, fallback to short string
-    let player1 = e.playerName || e.player?.name || e.detail || e.text || e.shortText || '';
+    // V34.0: show ⚽ icon directly before player name for goals
+    let player1 = e.playerName || e.detail || e.text || 'Unknown Player';
     if (player1.includes(' - ')) player1 = player1.split(' - ')[0]; // cleanup long strings
     if (player1.length > 30) player1 = player1.substring(0, 30) + '...';
     
     const player2 = e.playerOut || '';
     
-    // Check if the scraping icon is there, else fallback to type parsing
+    // Icon and type label
     let icon = e.icon || '⚽';
     let typeAr = type;
     
-    if (type.includes('GOAL')) { typeAr = 'هدف'; icon = '⚽'; }
+    if (type.includes('GOAL'))   { typeAr = 'هدف';   icon = '⚽'; }
     else if (type.includes('YELLOW')) { typeAr = 'إنذار'; icon = '🟨'; }
-    else if (type.includes('RED')) { typeAr = 'طرد'; icon = '🟥'; }
-    else if (type.includes('SUB')) { typeAr = 'تبديل'; icon = '🔄'; }
+    else if (type.includes('RED'))    { typeAr = 'طرد';   icon = '🟥'; }
+    else if (type.includes('SUB'))    { typeAr = 'تبديل'; icon = '🔄'; }
 
     // isHome check
     const isHome = e.isHome || (e.team && String(e.team.id) === String(match.teams?.home?.id));
+    
+    // V34.0: For goals specifically, show icon+name together
+    const playerDisplay = type.includes('GOAL')
+      ? `<span style="font-size:14px;margin-left:4px;">${icon}</span> <span style="font-size:13px; font-weight:700; color:#ffffff !important;">${player1}</span>`
+      : `<span style="font-size:13px; font-weight:700; color:#ffffff !important;">${player1}</span>`;
     
     html += `
       <div class="event-row" style="display:flex; width:100%; align-items:center; position:relative; z-index:2;">
          <div style="flex:1; text-align:left; padding-right:15px; display:flex; flex-direction:column; align-items:flex-end;">
             ${isHome ? `
                 <div style="display:flex; align-items:center; gap:5px;">
-                   <span style="font-size:13px; font-weight:700; color:#fff;">${player1}</span>
+                   ${playerDisplay}
                 </div>
                 ${player2 ? `<span style="font-size:11px; color:rgba(255,255,255,0.5);">خروج: ${player2}</span>` : ''}
                 <span style="font-size:11px; color:var(--accent); margin-top:2px;">${typeAr}</span>
@@ -791,7 +803,7 @@ function renderEvents(events, match) {
          
          <div style="width:40px; height:40px; border-radius:50%; background:var(--bg-card); display:flex; justify-content:center; align-items:center; border:2px solid rgba(255,255,255,0.1); flex-shrink:0;">
             <div style="display:flex; flex-direction:column; align-items:center;">
-               <span style="font-size:14px; margin-bottom:2px;">${icon}</span>
+               <span style="font-size:14px; margin-bottom:2px;">${type.includes('GOAL') ? '⚽' : icon}</span>
                <span style="font-size:10px; font-weight:800; color:#fff; background:rgba(0,0,0,0.5); padding:1px 4px; border-radius:4px; margin-top:-8px; z-index:3;">${time}'</span>
             </div>
          </div>
@@ -799,7 +811,7 @@ function renderEvents(events, match) {
          <div style="flex:1; text-align:right; padding-left:15px; display:flex; flex-direction:column; align-items:flex-start;">
             ${!isHome ? `
                 <div style="display:flex; align-items:center; gap:5px;">
-                   <span style="font-size:13px; font-weight:700; color:#fff;">${player1}</span>
+                   ${playerDisplay}
                 </div>
                 ${player2 ? `<span style="font-size:11px; color:rgba(255,255,255,0.5);">خروج: ${player2}</span>` : ''}
                 <span style="font-size:11px; color:var(--accent); margin-top:2px;">${typeAr}</span>
@@ -841,159 +853,141 @@ function renderLineups(lineups, match) {
   `;
 }
 
-// 10. منطق البث الشامل - V24.3
+// ─────────────────────────────────────────────────────────────
+// V40.0: Professional Server-Switcher Stream Player
+// Renders server1/server2/server3 buttons exactly like the reference UI.
+// ─────────────────────────────────────────────────────────────
 function renderStreamPlayer(match) {
   const matchId = String(match.fixture.id);
-  const manual = STATE.manualLinks[matchId];
-  
-  // الأولوية الأولى: وجود رابط صريح في الحقول اليدوية أو الفايربيس
-  const streamUrl = (typeof manual === 'string' ? manual : manual?.url) || 
-                    match.manual_link || match.stream_url || match.stream_link || "";
-  
-  if (streamUrl) {
-    console.log("Stream Found:", streamUrl);
-    
-    if (streamUrl.includes('.m3u8')) {
-      return `<video id="hls-video" controls style="width:100%; height:100%; background:#000;"></video>`;
-    }
-    if (streamUrl.includes('youtube.com') || streamUrl.includes('youtu.be')) {
-       const vidId = streamUrl.includes('v=') ? streamUrl.split('v=')[1]?.split('&')[0] : streamUrl.split('/').pop();
-       return `<iframe src="https://www.youtube.com/embed/${vidId}?autoplay=1" allowfullscreen allow="autoplay" style="width:100%; height:100%; border:none;"></iframe>`;
-    }
-    return `<iframe src="${streamUrl}" allowfullscreen allow="autoplay; encrypted-media" style="width:100%; height:100%; border:none;"></iframe>`;
+  const manual  = STATE.manualLinks[matchId];
+  const home    = encodeURIComponent(match.teams.home.name);
+  const away    = encodeURIComponent(match.teams.away.name);
+
+  // Gather servers from Firebase match_links object
+  let servers = [];
+  if (manual && typeof manual === 'object') {
+    if (manual.server1) servers.push({ label: 'سيرفر 1 HD', url: manual.server1 });
+    if (manual.server2) servers.push({ label: 'سيرفر 2 HD', url: manual.server2 });
+    if (manual.server3) servers.push({ label: 'سيرفر 3 HD', url: manual.server3 });
+    // Legacy single-url scraper format
+    if (!servers.length && manual.url)  servers.push({ label: 'سيرفر 1 HD', url: manual.url });
+    if (manual.alternate_url)           servers.push({ label: 'سيرفر 2 HD', url: manual.alternate_url });
+  } else if (typeof manual === 'string' && manual) {
+    servers.push({ label: 'سيرفر 1 HD', url: manual });
+  }
+  // Also check direct match fields
+  if (!servers.length) {
+    const fb = match.manual_link || match.stream_url || match.stream_link;
+    if (fb) servers.push({ label: 'سيرفر 1 HD', url: fb });
   }
 
-  // الأولوية الثانية: إذا وجد قناة ناقلة (broadcasters)
-  if (match.broadcasters) {
-    const channel = match.broadcasters;
+  if (!servers.length) {
+    // ── No stream yet — show ⌛ preparing state ──
     return `
-      <div style="padding:40px 20px; text-align:center; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:20px;">
-        <div style="width:50px; height:50px; background:rgba(0,255,163,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center;">
-          <i class="fas fa-broadcast-tower" style="color:var(--accent); font-size:20px;"></i>
-        </div>
-        <p style="color:#fff; font-size:14px; margin:0;">قناة البث: <span style="color:var(--accent); font-weight:bold;">${channel}</span></p>
-        <button onclick="window.open('https://www.google.com/search?q=بث+مباشر+${encodeURIComponent(channel + ' ' + match.teams.home.name)}', '_blank')" 
-                style="width: 100%; background: #00ffa3; color: #000; border: none; padding: 18px; border-radius: 12px; font-weight: 900; font-size: 15px; cursor: pointer; box-shadow: 0 8px 25px rgba(0,255,163,0.4);">
-          ⚡ جاري تجهيز بث [${channel}].. اضغط للمشاهدة
-        </button>
+    <div style="padding:30px 20px;text-align:center;min-height:300px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;">
+      <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,rgba(0,255,163,0.15),rgba(0,255,163,0.05));display:flex;align-items:center;justify-content:center;border:1px solid rgba(0,255,163,0.2);animation:livePulse 2s infinite;">
+        <span style="font-size:30px;">⌛</span>
       </div>
-    `;
-  }
-
-  // Fallback الاحترافي
-  return `
-    <div style="padding:40px 20px; text-align:center; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:15px;">
-      <i class="far fa-clock" style="font-size:45px; color:rgba(255,255,255,0.05);"></i>
-      <div style="color:rgba(255,255,255,0.4); font-size:13px; font-weight:normal;">
-        <p style="margin:0;">البث يبدأ قبل المباراة بـ 15 دقيقة.. استمتع بالمشاهدة</p>
+      <div>
+        <p style="color:var(--accent);font-weight:800;font-size:16px;margin:0 0 6px;">⌛ جاري تجهيز البث...</p>
+        <p style="color:rgba(255,255,255,0.4);font-size:12px;margin:0;">يتوفر البث تلقائياً قبل انطلاق المباراة بـ 30 دقيقة</p>
       </div>
-      <button class="standings-league-btn" onclick="window.open('https://www.youtube.com/results?search_query=${encodeURIComponent(match.teams.home.name + ' vs ' + match.teams.away.name + ' highlights')}', '_blank')" style="border:1px solid rgba(255,255,255,0.05); margin-top:10px; opacity:0.5;">
-         مشاهدة الملخصات
+      <button onclick="window.open('https://www.google.com/search?q=live+${home}+vs+${away}', '_blank')"
+        style="background:rgba(0,255,163,0.1);color:var(--accent);border:1px solid rgba(0,255,163,0.25);padding:12px 24px;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer;">
+        🔍 بحث عن بث مباشر
       </button>
-    </div>
-  `;
-}
-
-function initHlsPlayer(match) {
-  const manualUrl = STATE.manualLinks[match.fixture.id];
-  const streamUrl = (typeof manualUrl === 'string' ? manualUrl : manualUrl?.url) || 
-                    match.manual_link || match.stream_url || match.stream_link || "";
-  
-  // Only init HLS if stream URL is actually an m3u8. Otherwise the iframe is already rendered.
-  if (!streamUrl || !streamUrl.includes('.m3u8')) return;
-
-  const video = document.getElementById('hls-video');
-  if (!video) return;
-
-  const switchToIframe = () => {
-      if (window.activeHls) {
-          window.activeHls.destroy();
-          window.activeHls = null;
-      }
-      const container = document.getElementById('modal-stream-container');
-      if (container) {
-          const homeEncoded = encodeURIComponent(match.teams.home.name);
-          const awayEncoded = encodeURIComponent(match.teams.away.name);
-          container.innerHTML = `
-            <div style="padding:30px 20px; text-align:center; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:15px;">
-              <p style="color:var(--accent); font-weight:700; font-size:15px;">بحث عن بث مباشر بديل...</p>
-              <a href="https://www.google.com/search?q=${homeEncoded}+vs+${awayEncoded}+live+stream" target="_blank"
-                 style="width:100%; background:var(--accent); color:#000; border:none; padding:14px; border-radius:12px; font-weight:900; font-size:14px; cursor:pointer; text-decoration:none; display:block; box-shadow:0 8px 25px rgba(0,255,163,0.3);">
-                ⚡ بحث عن بث مباشر لـ ${match.teams.home.name + ' vs ' + match.teams.away.name}
-              </a>
-              <button onclick="this.parentElement.parentElement.innerHTML='<iframe src=\'https://www.youtube.com/results?search_query=${homeEncoded}+${awayEncoded}+live\' width=\'100%\' height=\'100%\' style=\'border:none;\'></iframe>';" 
-                style="width:100%; background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.15); padding:12px; border-radius:12px; font-size:14px; cursor:pointer;">
-                🌐 بحث YouTube مباشر
-              </button>
-            </div>
-          `;
-      }
-  };
-
-  const showError = (errorMsg = "Timeout or Network Issue", autoSwitch = false) => {
-    if (document.querySelector('#modal-stream-container iframe')) return;
-    const container = document.getElementById('modal-stream-container');
-    if (!container) return;
-
-    let errDiv = document.getElementById('hls-error-msg');
-    if (!errDiv) {
-       errDiv = document.createElement('div');
-       errDiv.id = 'hls-error-msg';
-       errDiv.style.cssText = 'position:absolute; bottom:10px; left:10px; background:rgba(200,0,0,0.85); color:#fff; padding:8px 12px; border-radius:8px; z-index:9998; font-size:11px; pointer-events:none; text-align:left; direction:ltr; max-width:90%;';
-       container.appendChild(errDiv);
-    }
-    errDiv.innerHTML = `⚠️ ${errorMsg}${autoSwitch ? '<br><b style="color:#fff;">Auto-switching in 3s...</b>' : ''}`;
-
-    if (!document.getElementById('server2-btn')) {
-        const btn = document.createElement('button');
-        btn.id = 'server2-btn';
-        btn.innerHTML = '🌐 سيرفر 2 (Hybrid)';
-        btn.className = 'standings-league-btn active';
-        btn.style.cssText = 'position:absolute; top:10px; left:10px; z-index:9999; padding:8px 12px; box-shadow:0 0 10px rgba(0,0,0,0.5);';
-        btn.onclick = () => switchToIframe();
-        container.appendChild(btn);
-    }
-
-    if (autoSwitch) setTimeout(switchToIframe, 3000);
-  };
-
-  let startTimeout = setTimeout(() => {
-     showError("Player Initialization Timeout (10s)", true);
-  }, 10000);
-
-  if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-    if (window.activeHls) window.activeHls.destroy();
-
-    const hls = new Hls({ enableWorker: true, lowLatencyMode: true, xhrSetup: xhr => { xhr.withCredentials = false; } });
-    window.activeHls = hls;
-
-    hls.loadSource(streamUrl);
-    hls.attachMedia(video);
-
-    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-      clearTimeout(startTimeout);
-      video.play().catch(e => console.warn('Autoplay blocked:', e));
-    });
-
-    hls.on(Hls.Events.ERROR, function(event, data) {
-        if (data.fatal) {
-            clearTimeout(startTimeout);
-            const isNetwork = data.type === Hls.ErrorTypes.NETWORK_ERROR;
-            showError(`HLS Fatal: ${data.details}`, isNetwork);
-            hls.destroy();
-        }
-    });
-
-  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = streamUrl;
-    video.addEventListener('loadedmetadata', () => { clearTimeout(startTimeout); video.play(); });
-    video.addEventListener('error', () => { clearTimeout(startTimeout); switchToIframe(); });
-  } else {
-    // Browser can't play HLS at all, go straight to iframe
-    clearTimeout(startTimeout);
-    switchToIframe();
+    </div>`;
   }
+
+  // ── Build professional server-switcher UI ──
+  const serverBtns = servers.map((s, i) => `
+    <button id="srv-btn-${matchId}-${i}"
+      onclick="switchStreamServer('${matchId}', ${i})"
+      style="flex:1;padding:14px 10px;font-size:14px;font-weight:800;cursor:pointer;border:none;
+             background:${i === 0 ? 'linear-gradient(135deg,#1a0080,#3a00cc)' : '#0a0a0a'};
+             color:${i === 0 ? '#fff' : 'rgba(255,255,255,0.6)'};
+             border-right:${i < servers.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none'};
+             transition:all 0.2s;"
+    >${s.label}${i === 0 ? ' <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#00ffa3;margin-right:4px;animation:livePulse 1s infinite;"></span>' : ''}</button>
+  `).join('');
+
+  // Top group tabs (سيرفر 1 / 2 / 3) — style from reference image (blue bg)
+  const topTabs = servers.map((s, i) => `
+    <button onclick="switchStreamServer('${matchId}', ${i})"
+      style="flex:1;padding:12px;font-size:14px;font-weight:800;cursor:pointer;border:none;
+             background:${i === 0 ? '#1a3fcf' : '#1240b0'};
+             color:#fff;border-left:1px solid rgba(255,255,255,0.12);"
+    >سيرفر ${i + 1}</button>
+  `).join('');
+
+  const firstUrl = servers[0].url;
+  const safeUrl  = firstUrl.replace(/"/g, '&quot;');
+
+  return `
+    <div style="width:100%;background:#000;border-radius:0;overflow:hidden;">
+      <!-- Top server group tabs (blue) -->
+      <div style="display:flex;width:100%;">${topTabs}</div>
+
+      <!-- HD sub-server pills -->
+      <div style="display:flex;width:100%;border-bottom:1px solid rgba(255,255,255,0.08);">${serverBtns}</div>
+
+      <!-- Player iframe -->
+      <div id="stream-player-${matchId}" style="width:100%;height:300px;position:relative;background:#000;">
+        <iframe id="stream-iframe-${matchId}"
+          src="${safeUrl}"
+          allowfullscreen allow="autoplay;encrypted-media;fullscreen"
+          referrerpolicy="no-referrer"
+          sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups"
+          style="width:100%;height:100%;border:none;"
+        ></iframe>
+      </div>
+
+      <!-- Controls bar (style from reference) -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#111;border-top:1px solid rgba(255,255,255,0.07);">
+        <div style="display:flex;align-items:center;gap:12px;color:rgba(255,255,255,0.7);">
+          <i class="fas fa-play" style="font-size:18px;"></i>
+          <i class="fas fa-volume-up" style="font-size:16px;"></i>
+          <span style="font-size:12px;font-weight:800;color:#ff2d55;letter-spacing:1px;">LIVE</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;color:rgba(255,255,255,0.7);">
+          <i class="fas fa-cog" style="font-size:16px;"></i>
+          <i class="fas fa-expand" style="font-size:16px;cursor:pointer;" onclick="document.getElementById('stream-iframe-${matchId}')?.requestFullscreen?.() || document.getElementById('stream-player-${matchId}')?.requestFullscreen?.()"></i>
+        </div>
+      </div>
+    </div>`;
 }
+
+// Switch between servers in the stream player
+function switchStreamServer(matchId, serverIdx) {
+  const manual  = STATE.manualLinks[matchId];
+  let servers   = [];
+  if (manual && typeof manual === 'object') {
+    if (manual.server1) servers.push(manual.server1);
+    if (manual.server2) servers.push(manual.server2);
+    if (manual.server3) servers.push(manual.server3);
+    if (!servers.length && manual.url) servers.push(manual.url);
+    if (manual.alternate_url) servers.push(manual.alternate_url);
+  } else if (typeof manual === 'string' && manual) {
+    servers.push(manual);
+  }
+  if (!servers[serverIdx]) return;
+
+  const iframe = document.getElementById(`stream-iframe-${matchId}`);
+  if (iframe) iframe.src = servers[serverIdx];
+
+  // Update sub-button styles
+  servers.forEach((_, i) => {
+    const btn = document.getElementById(`srv-btn-${matchId}-${i}`);
+    if (!btn) return;
+    btn.style.background = i === serverIdx ? 'linear-gradient(135deg,#1a0080,#3a00cc)' : '#0a0a0a';
+    btn.style.color      = i === serverIdx ? '#fff' : 'rgba(255,255,255,0.6)';
+  });
+  console.log(`[V40.0] Switched to server ${serverIdx + 1}:`, servers[serverIdx]);
+}
+
+// V40.0: initHlsPlayer is replaced by renderStreamPlayer (iframe-only).
+// Kept as no-op stub so any legacy calls don't break.
+function initHlsPlayer() {}
 
 
 // 10. أزرار التحكم (V26.3 - Fresh Date on Every Call)
@@ -1062,7 +1056,11 @@ function switchModalTab(tab, btn) {
 
     if (tab === 'stream') {
         const match = STATE.allMatches.find(m => String(m.fixture.id) === String(STATE.openMatchId));
-        if (match) initHlsPlayer(match);
+        if (match) {
+            // Re-render server player into the stream tab
+            const streamTab = document.getElementById('modal-stream');
+            if (streamTab) streamTab.innerHTML = renderStreamPlayer(match);
+        }
     }
 }
 
@@ -1078,17 +1076,249 @@ function hideLoading() {
 function openInstallWizard() { document.getElementById("install-wizard").style.display = "flex"; }
 function closeInstallWizard() { document.getElementById("install-wizard").style.display = "none"; }
 
-console.log("Korra Live SDK V33.1-FINAL-POLISH Loaded ✅");
+// ─────────────────────────────────────────────────────────────
+// V36.0: TV CHANNELS — Firebase-driven + demo fallback
+// Admin manages real links in RTDB: live_tv_links/{id}
+// Shape: { name, emoji, color, streamUrl, category }
+// ─────────────────────────────────────────────────────────────
+// V38.5: 100% iframe/embed — HLS completely removed (DNS/CORS failures)
+// All channels use iframeMode:true. No HLS.js manifests, no 404s.
+// URLs are aggregator embed pages (StreamEast/VidSrc/SportStream style).
+var TV_CHANNELS_DEFAULT = [
+  { name: 'beIN Sports 1',    emoji: '⚽', color: '#8b3fff', category: 'Football',
+    streamUrl: 'https://vidsrc.me/embed/soccer/', iframeMode: true },
+  { name: 'beIN Sports 2',    emoji: '⚽', color: '#5b3fff', category: 'Football',
+    streamUrl: 'https://vidsrc.me/embed/soccer/', iframeMode: true },
+  { name: 'SSC Sport 1',      emoji: '🏟️', color: '#00c896', category: 'Football',
+    streamUrl: 'https://embedstream.me/channel/1/', iframeMode: true },
+  { name: 'SSC Sport 2',      emoji: '🏟️', color: '#00a878', category: 'Football',
+    streamUrl: 'https://embedstream.me/channel/2/', iframeMode: true },
+  { name: 'Abu Dhabi Sports', emoji: '🇦🇪', color: '#00b4d8', category: 'Football',
+    streamUrl: 'https://embedstream.me/channel/3/', iframeMode: true },
+  { name: 'Sky Sports',       emoji: '🎙️', color: '#0074cc', category: 'Football',
+    streamUrl: 'https://embedstream.me/channel/4/', iframeMode: true },
+  { name: 'Al Kass Sport',    emoji: '🇶🇦', color: '#c08000', category: 'Football',
+    streamUrl: 'https://embedstream.me/channel/5/', iframeMode: true },
+  { name: 'MBC Sport',        emoji: '🎬', color: '#ff5722', category: 'Football',
+    streamUrl: 'https://embedstream.me/channel/6/', iframeMode: true },
+  { name: 'Eurosport 1',      emoji: '🏆', color: '#ff8c00', category: 'Football',
+    streamUrl: 'https://embedstream.me/channel/7/', iframeMode: true },
+  { name: 'DAZN / Sport 24',  emoji: '📹', color: '#ff0066', category: 'Football',
+    streamUrl: 'https://embedstream.me/channel/8/', iframeMode: true },
+];
+
+// Runtime channel list — replaced by Firebase data when available
+var TV_CHANNELS = TV_CHANNELS_DEFAULT.slice();
+
+// Load real channel URLs from Firebase live_tv_links/{id}
+function loadTVChannelsFromFirebase() {
+  if (typeof firebase === 'undefined' || !firebase.database) return;
+  firebase.database().ref('live_tv_links').once('value').then(function(snap) {
+    var data = snap.val();
+    if (!data || typeof data !== 'object') {
+      console.log('[TV] No live_tv_links in Firebase — using demo streams');
+      return;
+    }
+    var channels = Array.isArray(data) ? data : Object.values(data);
+    channels = channels.filter(function(c) { return c && c.name && c.streamUrl; });
+    if (channels.length > 0) {
+      TV_CHANNELS = channels;
+      console.log('[TV] Loaded ' + channels.length + ' real channels from Firebase live_tv_links');
+    } else {
+      console.log('[TV] live_tv_links exists but empty — keeping demo streams');
+    }
+  }).catch(function(e) {
+    console.warn('[TV] Firebase live_tv_links fetch failed:', e.message);
+  });
+}
+
+function renderLiveTVChannels(gridId, countId) {
+  gridId  = gridId  || 'channels-grid';
+  countId = countId || 'tv-count';
+  var grid = document.getElementById(gridId);
+  if (!grid) return;
+  var countEl = document.getElementById(countId);
+  if (countEl) countEl.textContent = TV_CHANNELS.length;
+
+  var html = '';
+  for (var i = 0; i < TV_CHANNELS.length; i++) {
+    var ch = TV_CHANNELS[i];
+    var modeBadge = ch.iframeMode
+      ? '<div style="font-size:9px;color:rgba(255,255,255,0.35);margin-top:2px;">iframe</div>'
+      : '';
+    html += '<div class="tv-channel-card" data-idx="' + i + '"'
+          + ' style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;'
+          + 'padding:18px 12px;cursor:pointer;text-align:center;'
+          + 'transition:transform 0.15s,box-shadow 0.15s;position:relative;overflow:hidden;">'
+          + '<div style="position:absolute;top:0;left:0;right:0;height:3px;background:' + ch.color + ';"></div>'
+          + '<div style="font-size:32px;margin-bottom:8px;">' + ch.emoji + '</div>'
+          + '<div style="font-size:12px;font-weight:800;color:#fff;margin-bottom:4px;">' + ch.name + '</div>'
+          + '<div style="font-size:10px;color:' + ch.color + ';font-weight:600;">' + ch.category + '</div>'
+          + '<div style="margin-top:8px;display:inline-flex;align-items:center;gap:4px;'
+          + 'background:rgba(255,45,85,0.15);border-radius:8px;padding:3px 8px;">'
+          + '<span style="width:6px;height:6px;border-radius:50%;background:#ff2d55;display:inline-block;"></span>'
+          + '<span style="font-size:9px;font-weight:900;color:#ff2d55;">LIVE</span>'
+          + '</div>' + modeBadge + '</div>';
+  }
+  grid.innerHTML = html;
+
+  // Delegated click — iframeMode flag passed through
+  grid.onclick = function(ev) {
+    var card = ev.target;
+    while (card && !card.classList.contains('tv-channel-card')) {
+      card = card.parentElement;
+    }
+    if (!card) return;
+    var idx = parseInt(card.getAttribute('data-idx'), 10);
+    var ch = TV_CHANNELS[idx];
+    if (ch) openTVChannel(ch.streamUrl, ch.name, ch.iframeMode);
+  };
+}
+
+function openTVChannel(streamUrl, channelName, iframeMode) {
+  var modal = document.getElementById('match-modal');
+  var modalBody = document.getElementById('modal-body');
+  if (!modal || !modalBody) return;
+
+  if (window.activeHls) { try { window.activeHls.destroy(); } catch(e){} window.activeHls = null; }
+
+  modal.style.cssText = 'display:flex !important;position:fixed;top:0;left:0;width:100%;height:100%;'
+    + 'background:rgba(0,0,0,0.92);z-index:100000;justify-content:center;align-items:center;backdrop-filter:blur(5px);';
+  document.body.style.overflow = 'hidden';
+
+  // V37.0: iframeMode channels skip HLS entirely — avoids CORS/manifest errors
+  var isHls = !iframeMode && streamUrl.indexOf('.m3u8') !== -1;
+  var playerHtml = isHls
+    ? '<video id="tv-hls-video" controls autoplay playsinline referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;height:100%;background:#000;"></video>'
+    + '<div id="tv-hls-overlay" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);'
+    + 'background:rgba(0,0,0,0.75);color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;pointer-events:none;">'
+    + '&#9719; جاري تحميل البث...</div>'
+    : '<iframe src="' + streamUrl.replace(/"/g, '&quot;') + '" allowfullscreen allow="autoplay;encrypted-media;fullscreen" '
+    + 'referrerpolicy="no-referrer" '
+    + 'sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups" '
+    + 'style="width:100%;height:100%;border:none;"></iframe>';
+
+  modalBody.innerHTML =
+      '<div style="width:100%;max-width:680px;padding:0;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:15px;border-bottom:1px solid rgba(255,255,255,0.1);">'
+    + '<div style="display:flex;align-items:center;gap:10px;">'
+    + '<span style="font-size:18px;">📺</span>'
+    + '<h3 style="margin:0;font-size:16px;">' + channelName + '</h3>'
+    + '<span style="background:#ff2d55;color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:900;">LIVE</span>'
+    + '</div>'
+    + '<button onclick="closeModal()" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;">&#xD7;</button>'
+    + '</div>'
+    + '<div id="tv-player-container" style="width:100%;height:360px;background:#000;position:relative;">'
+    + playerHtml
+    + '</div></div>';
+
+  if (!isHls) return; // iframe branch done
+
+  var video = document.getElementById('tv-hls-video');
+  if (!video) return;
+  var overlay = document.getElementById('tv-hls-overlay');
+
+  var hideOverlay = function() { if (overlay) overlay.style.display = 'none'; };
+
+  // Fallback to iframe when HLS totally fails
+  var switchToIframe = function(reason) {
+    if (window.activeHls) { try { window.activeHls.destroy(); } catch(e){} window.activeHls = null; }
+    var container = document.getElementById('tv-player-container');
+    if (!container) return;
+    console.warn('[TV-HLS] Falling back to iframe — reason:', reason);
+    container.innerHTML = '<iframe src="' + streamUrl.replace(/"/g, '&quot;') + '" allowfullscreen allow="autoplay;encrypted-media;fullscreen" '
+      + 'referrerpolicy="no-referrer" '
+      + 'sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups" '
+      + 'style="width:100%;height:100%;border:none;"></iframe>';
+  };
+
+  if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+    // Production HLS.js config: CORS bypass + aggressive retry
+    var hls = new Hls({
+      enableWorker:           true,
+      lowLatencyMode:         true,
+      startLevel:             -1,        // auto quality selection
+      capLevelToPlayerSize:   true,
+      maxBufferLength:        30,
+      maxBufferSize:          60 * 1000 * 1000,
+      maxMaxBufferLength:     60,
+      fragLoadingMaxRetry:    6,
+      fragLoadingRetryDelay:  1000,
+      manifestLoadingMaxRetry: 4,
+      manifestLoadingRetryDelay: 1500,
+      xhrSetup: function(xhr, url) {
+        xhr.withCredentials = false; // Prevent CORS credential errors
+      }
+    });
+    window.activeHls = hls;
+
+    // Safety timeout — if manifest hasn't parsed in 12s, switch to iframe
+    var safetyTimer = setTimeout(function() {
+      switchToIframe('manifest parse timeout (12s)');
+    }, 12000);
+
+    hls.loadSource(streamUrl);
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+      clearTimeout(safetyTimer);
+      hideOverlay();
+      video.play().catch(function(e) { console.warn('[TV-HLS] Autoplay blocked:', e.message); });
+    });
+
+    hls.on(Hls.Events.ERROR, function(event, data) {
+      if (data.fatal || data.details === 'manifestLoadError' || data.details === 'manifestParsingError') {
+        clearTimeout(safetyTimer);
+        console.error('[TV-HLS] Fatal error:', data.type, data.details);
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          // Try to recover once before falling back
+          hls.startLoad();
+          setTimeout(function() { switchToIframe(data.details); }, 4000);
+        } else {
+          switchToIframe(data.details);
+        }
+      } else {
+        console.warn('[TV-HLS] Non-fatal:', data.type, data.details);
+      }
+    });
+
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    // Native HLS (Safari / iOS)
+    video.src = streamUrl;
+    video.addEventListener('loadedmetadata', function() { hideOverlay(); video.play(); });
+    video.addEventListener('error', function() { switchToIframe('native HLS error'); });
+  } else {
+    // Browser has no HLS support at all
+    switchToIframe('HLS not supported');
+  }
+}
+window.openTVChannel = openTVChannel;
+
+console.log("Korra Live SDK V40.0-PRO-LIVE Loaded ✅");
+
+// ── Global assignments (after all function declarations) ──────
+window.selectMatchDay    = selectMatchDay;
+window.filterByLeague    = filterByLeague;
+window.refreshData       = refreshData;
+window.toggleLanguage    = toggleLanguage;
+window.closeModal        = closeModal;
+window.switchModalTab    = switchModalTab;
+window.openMatchDetail   = openMatchDetail;
+window.openInstallWizard = openInstallWizard;
+window.closeInstallWizard= closeInstallWizard;
+window.switchPage        = switchPage;
+window.fetchStandings    = fetchStandings;
+window.switchStreamServer= switchStreamServer;
 
 // 12. التشغيل
 window.onload = () => {
     // Set STATE.currentDate to today fresh on load
     STATE.currentDate = new Date();
+    loadTVChannelsFromFirebase(); // V36.0: pull real channel URLs from Firebase
     fetchMatches();
     setupManualStreamListener();
     setInterval(() => { if (document.visibilityState === 'visible') {
-        STATE.currentDate = new Date(); // refresh to true now on auto-refresh if on 'today'
-        // Only auto-refresh if user is on today's tab
+        STATE.currentDate = new Date();
         const activeTab = document.querySelector('.match-tab.active');
         const isToday = !activeTab || activeTab.dataset.day === 'today' || activeTab.dataset.day === undefined;
         if (isToday) STATE.currentDate = new Date();

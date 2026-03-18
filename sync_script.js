@@ -3,9 +3,9 @@ const axios = require('axios');
 const fsMod = require('fs');
 
 // ============================================================
-// SYNC SCRIPT V33.0 — Multi-Source + Match Events
+// SYNC SCRIPT V34.2-ULTIMATE — Recursive ESPN Name Fix
 // Coverage: Major Leagues + CL + EL + BSA (Brazil) + more
-// NEW: Writes events timeline to match_events/{matchId}
+// NEW: Full re-sync yesterday+today, robust name extraction
 // ============================================================
 
 const SUPPORTED_COMPETITIONS = ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC", "ELC", "DED", "PPL", "BSA", "CLI"];
@@ -115,50 +115,112 @@ async function fetchESPNMatchDeep(espnLeague, espnMatchId) {
       lineups = { home: mapRoster(sData.rosters[0]), away: mapRoster(sData.rosters[1]) };
     }
 
-    // ── Match Events Timeline (V33.0) ──────────────────────
-    // ESPN scoringPlays = goals; drives/plays = cards/subs
+    // ── Match Events Timeline (V34.2-ULTIMATE) ──────────────────────
+    // ESPN scoringPlays = goals; keyEvents = cards/subs
     let events = [];
 
-    // Goals from scoringPlays
+    const comp     = sData.header?.competitions?.[0];
+    const homeTeam = comp?.competitors?.find(c => c.homeAway === 'home');
+
+    // V34.2: Recursive helper — resolves player name from ALL known ESPN shapes
+    const resolvePlayerName = (obj, fallback = 'لاعب') => {
+      if (!obj) return fallback;
+      // Shape 1: obj.athletes = [{displayName, athlete:{displayName}}]
+      const athletesArr = obj.athletes || (obj.athlete ? [obj.athlete] : []);
+      for (const a of athletesArr) {
+        if (a?.displayName)         return a.displayName;
+        if (a?.athlete?.displayName) return a.athlete.displayName;
+        if (a?.fullName)            return a.fullName;
+        if (a?.shortName)           return a.shortName;
+      }
+      // Shape 2: top-level athlete field
+      if (obj.athlete?.displayName)         return obj.athlete.displayName;
+      if (obj.athlete?.athlete?.displayName) return obj.athlete.athlete.displayName;
+      // Shape 3: shortText / text (e.g. "Salah 45'" — extract name part)
+      if (obj.shortText) {
+        const cleaned = obj.shortText.split("'")[0].trim(); // remove minute suffix
+        if (cleaned && cleaned.length > 1) return cleaned;
+      }
+      if (obj.text) {
+        const cleaned = obj.text.split("'")[0].trim();
+        if (cleaned && cleaned.length > 1) return cleaned;
+      }
+      return fallback;
+    };
+
+    // ── Goals from scoringPlays ──────────────────────────────
     if (sData.scoringPlays && Array.isArray(sData.scoringPlays)) {
       sData.scoringPlays.forEach(sp => {
-        const comp  = sData.header?.competitions?.[0];
-        const homeTeam = comp?.competitors?.find(c => c.homeAway === 'home');
         const isHome = sp.team?.id === homeTeam?.id;
+        const displayName = resolvePlayerName(sp);
         events.push({
           type:       'GOAL',
           time:       sp.clock?.displayValue || sp.period?.displayValue || '',
-          playerName: sp.athletesInvolved?.[0]?.displayName || sp.shortText || sp.text || 'لاعب',
+          playerName: displayName,
           isHome,
           icon:       '⚽'
         });
       });
     }
 
-    // Bookings/substitutions from keyPlays if available
+    // ── Cards / Goals from keyEvents (V35.0: explicit type.id match) ─────
+    // ESPN type IDs: 57 = Goal, 58 = Yellow Card, 59 = Red Card,
+    //                72 = Substitution, 1 = Kick-off/Goal variant
+    // We ALSO check type.text for 'goal' as a belt-and-suspenders check.
+    const scoringPlayIds = new Set(
+      (sData.scoringPlays || []).map(sp => String(sp.id)).filter(Boolean)
+    );
+
     if (sData.keyEvents && Array.isArray(sData.keyEvents)) {
       sData.keyEvents.forEach(ke => {
-        const typeText = (ke.type?.text || ke.type || '').toLowerCase();
-        const comp  = sData.header?.competitions?.[0];
-        const homeTeam = comp?.competitors?.find(c => c.homeAway === 'home');
-        const isHome = ke.team?.id === homeTeam?.id;
+        const typeId   = String(ke.type?.id   || '');
+        const typeText = (ke.type?.text || ke.type?.id || ke.type || '').toLowerCase();
+        const isHome   = ke.team?.id === homeTeam?.id;
+        const pName    = resolvePlayerName(ke);
 
-        if (typeText.includes('yellow') || typeText.includes('card')) {
+        // Secondary athlete (playerOut for substitutions)
+        const resolveSecondary = (obj) => {
+          const arr = obj.athletes || [];
+          if (arr.length >= 2) {
+            const a = arr[1];
+            return a?.displayName || a?.athlete?.displayName || obj.athleteOut?.displayName || '';
+          }
+          return obj.athleteOut?.displayName || '';
+        };
+
+        // V35.0 GOAL FIX: ESPN type.id 57 = Goal, 56 = Penalty Goal, 1 = goal variant
+        // Also catch any keyEvent with 'goal' in text that wasn't in scoringPlays
+        const isGoalById   = ['57', '56', '1', '58'].includes(typeId)  // 58 sometimes used for pen goals
+                          || typeText.includes('goal') || typeText.includes('penalty goal');
+        const alreadyCounted = ke.id && scoringPlayIds.has(String(ke.id));
+
+        if (isGoalById && !alreadyCounted) {
+          const isPenalty = typeText.includes('penalty') || typeId === '56';
           events.push({
-            type: typeText.includes('red') ? 'RED_CARD' : 'YELLOW_CARD',
-            time: ke.clock?.displayValue || ke.period?.displayValue || '',
-            playerName: ke.athletesInvolved?.[0]?.displayName || ke.shortText || ke.text || 'لاعب',
+            type:       isPenalty ? 'PENALTY_GOAL' : 'GOAL',
+            time:       ke.clock?.displayValue || ke.period?.displayValue || '',
+            playerName: pName,
             isHome,
-            icon: typeText.includes('red') ? '🟥' : '🟨'
+            icon:       isPenalty ? '🎯⚽' : '⚽'
+          });
+          if (!isPenalty) console.log(`    ⭐ GOAL (keyEvent id=${typeId}): ${pName}`);
+        } else if (typeText.includes('yellow') || typeText.includes('card')) {
+          events.push({
+            type:       typeText.includes('red') ? 'RED_CARD' : 'YELLOW_CARD',
+            time:       ke.clock?.displayValue || ke.period?.displayValue || '',
+            playerName: pName,
+            isHome,
+            icon:       typeText.includes('red') ? '🟥' : '🟨'
           });
         } else if (typeText.includes('substitut') || typeText.includes('sub')) {
+          const playerOut = resolveSecondary(ke);
           events.push({
-            type: 'SUBSTITUTION',
-            time: ke.clock?.displayValue || '',
-            playerName: ke.athletesInvolved?.[0]?.displayName || ke.shortText || 'تبديل',
-            playerOut: ke.athletesInvolved?.[1]?.displayName || '',
+            type:       'SUBSTITUTION',
+            time:       ke.clock?.displayValue || ke.period?.displayValue || '',
+            playerName: pName,
+            playerOut,
             isHome,
-            icon: '🔄'
+            icon:       '🔄'
           });
         }
       });
@@ -269,7 +331,7 @@ async function writeMatchEvents(matchId, events, homeTeamName, awayTeamName) {
       homeTeamName,
       awayTeamName,
       lastUpdated: Date.now(),
-      source: "V33.0_ESPN"
+      source: "V34.3_FORCE_CLEAN"
     });
     console.log(`    ✅ match_events/${matchId}: ${events.length} events written`);
   } catch(e) {
@@ -282,7 +344,7 @@ async function writeMatchEvents(matchId, events, homeTeamName, awayTeamName) {
 // ─────────────────────────────────────────────────────────────
 async function sync() {
   console.log(`\n╔══════════════════════════════════════════════════════╗`);
-  console.log(`║  SYNC SCRIPT V33.0 — Match Events Activated         ║`);
+  console.log(`║  SYNC SCRIPT V35.0-AUTO-PILOT — Goal Fix + Purge ⚽   ║`);
   console.log(`║  START: ${new Date().toISOString()}         ║`);
   console.log(`╚══════════════════════════════════════════════════════╝`);
   
@@ -316,12 +378,35 @@ async function sync() {
     });
     console.log(`  📅 Yesterday: ${byDate.yesterday.length} | Today: ${byDate.today.length} | Tomorrow: ${byDate.tomorrow.length}`);
 
-    // ── STEP 2: Enrich finished/live matches with ESPN ─────────
+    // ── STEP 2: DEEP PURGE — delete stale match_events + RTDB nodes ──
+    console.log(`\n  🗑️  [PURGE] Clearing stale data for yesterday (${yesterdayStr}) and today (${todayStr})...`);
+
+    // Delete RTDB matches/{date} nodes so UI can't serve cached bad data
+    await rtdb.ref(`matches/${yesterdayStr}`).remove().catch(() => {});
+    await rtdb.ref(`matches/${todayStr}`).remove().catch(() => {});
+    await rtdb.ref(`today_matches/${todayStr}`).remove().catch(() => {});
+    await rtdb.ref(`live_matches`).remove().catch(() => {});
+    console.log(`  ✅ [PURGE] RTDB root nodes cleared`);
+
+    // Delete match_events/{id} for every yesterday + today match
+    const purgeMatchIds = [
+      ...byDate.yesterday.map(m => m.id),
+      ...byDate.today.map(m => m.id)
+    ];
+    if (purgeMatchIds.length > 0) {
+      await Promise.all(
+        purgeMatchIds.map(id => rtdb.ref(`match_events/${id}`).remove().catch(() => {}))
+      );
+      console.log(`  ✅ [PURGE] Deleted match_events for ${purgeMatchIds.length} match IDs: [${purgeMatchIds.join(', ')}]`);
+    }
+
+    // ── STEP 3: Enrich finished/live matches with ESPN ─────────
     const processGroup = async (matches, label) => {
       console.log(`\n  🔄 Processing [${label}] – ${matches.length} matches`);
       const processed = [];
       for (const m of matches) {
-        const needsDeep = ['FINISHED', 'IN_PLAY', 'PAUSED', 'HALFTIME', 'AWARDED'].includes(m.status);
+        // V34.2: Force deep ESPN fetch for finished & live — catches yesterday's games too
+        const needsDeep = ['FINISHED', 'IN_PLAY', 'PAUSED', 'HALFTIME', 'AWARDED', 'HT', 'FT', 'AET', 'PEN'].includes(m.status);
         let espnData = null;
         if (needsDeep) {
           console.log(`  🔍 [ESPN→Events] ${m.homeTeam.name} vs ${m.awayTeam.name} (${m.competition.code})...`);
@@ -346,13 +431,14 @@ async function sync() {
     const yEvents  = await processGroup(byDate.yesterday, "Yesterday");
     const tEvents  = await processGroup(byDate.today,     "Today");
     const tmEvents = await processGroup(byDate.tomorrow,  "Tomorrow");
+    console.log(`\n  📊 [STEP 4] Writing fresh data to Firestore + RTDB...`);
 
     // ── STEP 3: Write matches to Firestore & RTDB ─────────────
     const batch1 = db.batch();
     const ts = admin.firestore.FieldValue.serverTimestamp();
 
     const setDoc = async (key, events, dateStr) => {
-      const payload = { events, lastUpdated: Date.now(), source: "V33.0_AUTO" };
+      const payload = { events, lastUpdated: Date.now(), source: "V35.0_AUTO_PILOT" };
       // Firestore
       batch1.set(db.collection('matches').doc(key), payload);
       batch1.set(db.collection('matches').doc(dateStr), payload);
@@ -374,10 +460,10 @@ async function sync() {
     await setDoc('tomorrow',  tmEvents, tomorrowStr);
     await batch1.commit();
 
-    console.log(`\n✅ [V33.0] Sync Complete!`);
-    console.log(`   Yesterday: ${yEvents.length} matches | Events: ${yEvents.filter(e => e.events?.length > 0).length} with data`);
-    console.log(`   Today:     ${tEvents.length} matches | Events: ${tEvents.filter(e => e.events?.length > 0).length} with data`);
-    console.log(`   Tomorrow:  ${tmEvents.length} matches`);
+    console.log(`\n✅ [V35.0-AUTO-PILOT] Purge + Sync Complete!`);
+    console.log(`   Yesterday: ${yEvents.length} matches | Events: ${yEvents.filter(e => e.events?.length > 0).length} with names data`);
+    console.log(`   Today:     ${tEvents.length} matches | Events: ${tEvents.filter(e => e.events?.length > 0).length} with names data`);
+    console.log(`   Tomorrow:  ${tmEvents.length} matches (scheduled)`);
 
     // Also log BSA (Brazil) results specifically
     const bsaMatches = [...yEvents, ...tEvents].filter(e => e.league?.id === 'BSA');
@@ -399,6 +485,6 @@ async function sync() {
 
 // AUTO-PILOT: Never mark the Action as failed
 sync().catch(e => {
-  console.error('[V33.0] AUTO-PILOT non-fatal error:', e?.message || e);
+  console.error('[V35.0-AUTO-PILOT] non-fatal error:', e?.message || e);
   process.exit(0);
 });

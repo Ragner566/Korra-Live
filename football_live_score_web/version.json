@@ -1,6 +1,6 @@
 {
-  "latestVersion": "22.0",
-  "critical": false,
-  "message": "V22.0: إصلاح CORS للقنوات + Timeline من Firebase + تخزين مؤقت فوري + تحسين الإعلانات",
+  "latestVersion": "36.0",
+  "critical": true,
+  "message": "V36.0-REAL-LIVE: قنوات Firebase-driven + 30-دقيقة للبحث التلقائي + شارة LIVE + تشغيل تلقائي للبث",
   "desktopUrl": "https://korra-b5d32.web.app"
 }
