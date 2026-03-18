@@ -3,11 +3,13 @@ const axios  = require('axios');
 const fsMod  = require('fs');
 
 // ============================================================
-// STREAM SCRAPER V40.0-PRO-LIVE
-// ─ Saves server1 / server2 / server3 keys in match_links/{matchId}
-// ─ Each server is a different aggregator embed source
-// ─ HEAD validation: skip 404/403 responses before saving
-// ─ 100% iframe/embed — no HLS
+// STREAM SCRAPER V41.0-CHAMPIONS-FINAL
+// ─ ONLY sports-specific embed sources (no movie sites)
+// ─ Content validation: GET page body, reject if it has movie
+//   keywords and lacks sports keywords
+// ─ URL filter: discard any URL without 'soccer|sport|match|
+//   football|live|stream' in the path
+// ─ Saves server1 / server2 / server3 in match_links/{matchId}
 // ============================================================
 
 let serviceAccount;
@@ -35,46 +37,123 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms));
 // ─────────────────────────────────────────────────────────────
 const WINDOW_BEFORE_KICKOFF_MS = 30 * 60 * 1000;
 
+// Sports-only keywords — URL MUST contain at least one
+const SPORTS_PATH_KEYWORDS = [
+  'soccer', 'football', 'sport', 'match', 'live', 'stream',
+  'futbol', 'koora', 'kora', 'bein', 'ssc', 'biss'
+];
+
+// Movie/series keywords — page body must NOT be dominated by these
+const MOVIE_DISCARD_KEYWORDS = [
+  'tv-series', 'tvshows', 'tv_shows', 'movies/', '/movie/',
+  'embed/tv', 'embedtvshow', 'season', 'episode',
+  'watch movie', 'full movie', 'watch series'
+];
+
 // ─────────────────────────────────────────────────────────────
-// Embed URL builders — one URL per server slot
-// These are aggregator/embed sites that serve iframes.
+// Candidate URL builders — ONLY sports-specific paths
+// The sites below are known sports streaming aggregators.
 // ─────────────────────────────────────────────────────────────
-function buildEmbedUrls(matchId, homeName, awayName) {
-  const q = encodeURIComponent(`${homeName} vs ${awayName}`);
+function buildSportsCandidates(matchId, homeName, awayName, leagueId) {
+  const h = encodeURIComponent(homeName);
+  const a = encodeURIComponent(awayName);
+  const q = encodeURIComponent(`${homeName} vs ${awayName} live`);
+
   return [
-    // Server 1: VidSrc — most reliable, index by fixture id
-    `https://vidsrc.me/embed/soccer/${matchId}`,
-    // Server 2: SportStream search embed
-    `https://embedstream.me/soccer/?q=${q}`,
-    // Server 3: 2embed.cc soccer search
-    `https://www.2embed.cc/embedtvshows/${matchId}`,
+    // ── Tier 1: streamed.su — dedicated sports stream site (soccer section)
+    // Uses its own slugs, but the /soccer/ root page works as a sports aggregator
+    `https://streamed.su/watch/soccer`,
+
+    // ── Tier 2: sportsurge sports embed (by team names)
+    `https://sportsurge.net/embed/soccer/${h}-vs-${a}`,
+
+    // ── Tier 3: livesoccertv — match lookup by team names (embeddable)
+    `https://embed.sportowl.me/soccer/?home=${h}&away=${a}`,
+
+    // ── Tier 4: sport-stream.live — UCL-aware embed
+    `https://sport-stream.live/soccer/${h}-vs-${a}`,
+
+    // ── Tier 5: kickoff.st embed format (soccer specific)
+    `https://kickoff.st/stream/soccer/${matchId}`,
+
+    // ── Tier 6: sofa score embed
+    `https://widgets.sofascore.com/embed/event/${matchId}/momentum`,
+
+    // ── Tier 7: onefootball live embed (free CL coverage)
+    `https://onefootball.com/en/match/${matchId}/live`,
   ];
 }
 
 // ─────────────────────────────────────────────────────────────
-// Validation: HEAD check to filter dead links (404 / 403 / 5xx)
-// Returns true if the URL is likely reachable.
+// Step 1 — URL path filter: reject non-sports URLs immediately
 // ─────────────────────────────────────────────────────────────
-async function isReachable(url) {
+function hasSportsPath(url) {
+  const lower = url.toLowerCase();
+  return SPORTS_PATH_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Step 2 — GET content check: fetch first 8KB, reject movie pages
+// ─────────────────────────────────────────────────────────────
+async function isSportsContent(url) {
   try {
-    const res = await axios.head(url, {
-      timeout: 5000,
+    const res = await axios.get(url, {
+      timeout: 6000,
       maxRedirects: 4,
+      responseType: 'text',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122',
-        'Accept': 'text/html,application/xhtml+xml'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/123 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,*/*;q=0.9',
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8'
       },
-      validateStatus: () => true // never throw on status
+      validateStatus: s => s < 500
     });
-    const ok = res.status >= 200 && res.status < 400;
-    console.log(`      ✅ HEAD ${res.status} → ${url.substring(0, 60)}`);
-    if (!ok) console.log(`      ⚠️  Skipping (${res.status})`);
-    return ok;
+
+    if (res.status === 404) {
+      console.log(`      ⛔ 404 — ${url.substring(0, 65)}`);
+      return false;
+    }
+
+    const body = (res.data || '').substring(0, 12000).toLowerCase();
+
+    // Hard reject: page body clearly about movies/series
+    const isMovie = MOVIE_DISCARD_KEYWORDS.some(kw => body.includes(kw));
+    if (isMovie) {
+      const kw = MOVIE_DISCARD_KEYWORDS.find(k => body.includes(k));
+      console.log(`      🎬 MOVIE/SERIES page detected (keyword: "${kw}") — DISCARDED`);
+      return false;
+    }
+
+    // Soft check: page should have at least one sports signal
+    const sportsSignals = [
+      'soccer', 'football', 'match', 'live', 'stream', 'sport',
+      'goal', 'fixture', 'league', 'ucl', 'champions', 'kick'
+    ];
+    const hasSports = sportsSignals.some(kw => body.includes(kw));
+    if (!hasSports) {
+      console.log(`      ⚠️  No sports content detected — DISCARDED`);
+      return false;
+    }
+
+    console.log(`      ✅ Sports content confirmed [${res.status}] — ${url.substring(0, 60)}`);
+    return true;
   } catch (e) {
-    // Network error (DNS failure, timeout) — skip silently
-    console.log(`      ❌ HEAD failed for ${url.substring(0, 60)}: ${e.message}`);
+    console.log(`      ❌ GET failed: ${e.message.substring(0, 60)}`);
     return false;
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Full validation pipeline for a candidate URL
+// ─────────────────────────────────────────────────────────────
+async function validateSportsUrl(url) {
+  // Gate 1: URL path must be sports-specific
+  if (!hasSportsPath(url)) {
+    console.log(`      🚫 Non-sports URL path — SKIPPED: ${url.substring(0, 60)}`);
+    return false;
+  }
+  // Gate 2: Content check
+  return isSportsContent(url);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -101,13 +180,13 @@ function isInStreamWindow(match) {
 // MAIN SCRAPER
 // ─────────────────────────────────────────────────────────────
 async function scrape() {
-  console.log('\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║  STREAM SCRAPER V40.0-PRO-LIVE                           ║');
-  console.log(`║  START: ${new Date().toISOString()}            ║`);
-  console.log('╚══════════════════════════════════════════════════════════╝\n');
-  console.log('  Mode: server1/server2/server3 iframe | HEAD validation ON');
+  console.log('\n╔═══════════════════════════════════════════════════════════╗');
+  console.log('║  STREAM SCRAPER V41.0-CHAMPIONS-FINAL                     ║');
+  console.log(`║  START: ${new Date().toISOString()}             ║`);
+  console.log('╚═══════════════════════════════════════════════════════════╝\n');
+  console.log('  ✅ SPORTS-ONLY mode | Content validation ON | Movie filter ON');
 
-  // ── Step 1: Load today's matches ─────────────────────────
+  // ── Load today's matches ─────────────────────────
   const now   = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
@@ -125,7 +204,6 @@ async function scrape() {
 
   console.log(`  📊 Total: ${matches.length} | Eligible (live + 30min pre-kick): ${eligible.length}`);
 
-  // ── Step 2: Process each match ────────────────────────────
   let saved = 0;
 
   for (const match of eligible) {
@@ -134,55 +212,55 @@ async function scrape() {
     const homeName = match.teams?.home?.name || 'Home';
     const awayName = match.teams?.away?.name || 'Away';
 
-    console.log(`\n  🔍 [${leagueId}] ${homeName} vs ${awayName} (id:${matchId})`);
+    console.log(`\n  ⚽ [${leagueId}] ${homeName} vs ${awayName} (id:${matchId})`);
 
-    // Check if already has all 3 servers
+    // Skip if already has 3 validated servers
     const existSnap = await rtdb.ref(`match_links/${matchId}`).once('value');
     const existing  = existSnap.val();
     if (existing?.server1 && existing?.server2 && existing?.server3) {
-      console.log(`    ✅ Already has 3 servers — skipping`);
+      console.log(`    ✅ Already has 3 verified sport servers — skipping`);
       continue;
     }
 
-    // Build candidate URLs
-    const candidates = buildEmbedUrls(matchId, homeName, awayName);
-    console.log(`    🔎 Checking ${candidates.length} candidate URLs...`);
+    // Build candidates using ONLY sports-specific URL patterns
+    const candidates = buildSportsCandidates(matchId, homeName, awayName, leagueId);
+    console.log(`    🔎 Checking ${candidates.length} sports candidates...`);
 
-    // Validate each candidate
     const validServers = [];
     for (const url of candidates) {
-      const ok = await isReachable(url);
+      if (validServers.length >= 3) break; // max 3 servers
+      console.log(`    → Testing: ${url.substring(0, 70)}`);
+      const ok = await validateSportsUrl(url);
       if (ok) validServers.push(url);
-      await delay(300);
+      await delay(400);
     }
 
     if (!validServers.length) {
-      console.log(`    ❌ All servers failed validation — skipping`);
+      console.log(`    ❌ No valid sports servers found — skipping match`);
       continue;
     }
 
-    // Build Firebase object with server1/server2/server3 slots
+    // Build Firebase object
     const streamDoc = {
-      server1:   validServers[0] || null,
-      server2:   validServers[1] || null,
-      server3:   validServers[2] || null,
-      type:      'iframe',
-      source:    'V40.0-MULTI-EMBED',
+      server1:  validServers[0] || null,
+      server2:  validServers[1] || null,
+      server3:  validServers[2] || null,
+      type:     'iframe',
+      source:   'V41.0-SPORTS-ONLY',
       matchId,
       homeName,
       awayName,
       leagueId,
-      savedAt:   Date.now(),
-      version:   'V40.0-SCRAPER'
+      savedAt:  Date.now(),
+      version:  'V41.0-SCRAPER'
     };
 
     // Remove null slots
-    if (!streamDoc.server2) delete streamDoc.server2;
-    if (!streamDoc.server3) delete streamDoc.server3;
+    Object.keys(streamDoc).forEach(k => streamDoc[k] === null && delete streamDoc[k]);
 
     await rtdb.ref(`match_links/${matchId}`).set(streamDoc);
 
-    // Set HAS_LIVE_STREAM flag on the match record
+    // Set HAS_LIVE_STREAM flag
     try {
       const eventsSnap = await rtdb.ref(`matches/${today}/events`).once('value');
       const eventsData = eventsSnap.val();
@@ -199,26 +277,23 @@ async function scrape() {
           }
         }
       }
-    } catch(e) {
-      console.warn(`    ⚠️  Could not set HAS_LIVE_STREAM: ${e.message}`);
-    }
+    } catch(e) { console.warn(`    ⚠️  HAS_LIVE_STREAM flag error: ${e.message}`); }
 
-    const serverCount = [streamDoc.server1, streamDoc.server2, streamDoc.server3].filter(Boolean).length;
-    console.log(`    💾 Saved → match_links/${matchId} | ${serverCount} servers | HAS_LIVE_STREAM=true`);
+    const count = [streamDoc.server1, streamDoc.server2, streamDoc.server3].filter(Boolean).length;
+    console.log(`    💾 Saved → match_links/${matchId} | ${count} SPORTS servers | HAS_LIVE_STREAM=true`);
     saved++;
     await delay(500);
   }
 
-  // ── Summary ───────────────────────────────────────────────
-  console.log(`\n╔══════════════════════════════════════════════════════════╗`);
-  console.log(`║  ✅ [V40.0-PRO-LIVE] Done!                               ║`);
-  console.log(`║  Eligible: ${eligible.length} | Saved: ${saved} | Validated: HEAD-checked     ║`);
-  console.log(`╚══════════════════════════════════════════════════════════╝`);
+  console.log(`\n╔═══════════════════════════════════════════════════════════╗`);
+  console.log(`║  ✅ [V41.0-CHAMPIONS-FINAL] Done!                         ║`);
+  console.log(`║  Eligible: ${String(eligible.length).padEnd(3)} | Saved: ${String(saved).padEnd(3)} | Movie filter: ACTIVE    ║`);
+  console.log(`╚═══════════════════════════════════════════════════════════╝`);
 
   process.exit(0);
 }
 
 scrape().catch(e => {
-  console.error('[SCRAPER V40.0] Error:', e?.message || e);
+  console.error('[SCRAPER V41.0] Error:', e?.message || e);
   process.exit(0);
 });

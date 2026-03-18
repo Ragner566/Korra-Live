@@ -8,7 +8,7 @@
 let CONFIG = {
   REFRESH_INTERVAL: 30000,   // 30s — fast update visibility
   SUPPORTED_LEAGUES: ["PL", "PD", "BL1", "SA", "FL1", "CL", "EL", "EC"],
-  VERSION: "V40.0-PRO-LIVE"
+  VERSION: "V41.0-CHAMPIONS-FINAL"
 };
 
 let STATE = {
@@ -854,6 +854,24 @@ function renderLineups(lineups, match) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// V41.0: Client-side sports URL guard
+// Discards any server URL that doesn't look like a sports page.
+// This is a final safety net against movie/series sites.
+// ─────────────────────────────────────────────────────────────
+const SPORTS_URL_KEYWORDS = ['soccer','football','sport','match','live','stream','futbol','koora','kora','bein','ssc'];
+function isSportsUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  const lower = url.toLowerCase();
+  // Always allow if it contains a sports keyword
+  if (SPORTS_URL_KEYWORDS.some(kw => lower.includes(kw))) return true;
+  // Allow known generic sports aggregator domains explicitly
+  const sportsDomains = ['streamed.su','sportsurge.net','sportowl.me','sport-stream.live',
+                          'kickoff.st','sofascore.com','onefootball.com','livesoccertv.com',
+                          'yallashoot.net','yalla-shoot.com','sopcast.com'];
+  return sportsDomains.some(d => lower.includes(d));
+}
+
+// ─────────────────────────────────────────────────────────────
 // V40.0: Professional Server-Switcher Stream Player
 // Renders server1/server2/server3 buttons exactly like the reference UI.
 // ─────────────────────────────────────────────────────────────
@@ -863,22 +881,31 @@ function renderStreamPlayer(match) {
   const home    = encodeURIComponent(match.teams.home.name);
   const away    = encodeURIComponent(match.teams.away.name);
 
-  // Gather servers from Firebase match_links object
+  // Gather servers from Firebase match_links object — filtered by sports URL check
   let servers = [];
+  const pushIfSports = (url, label) => {
+    if (!url) return;
+    if (!isSportsUrl(url)) {
+      console.warn(`[V41.0] Discarded non-sports URL: ${url.substring(0, 60)}`);
+      return;
+    }
+    servers.push({ label, url });
+  };
+
   if (manual && typeof manual === 'object') {
-    if (manual.server1) servers.push({ label: 'سيرفر 1 HD', url: manual.server1 });
-    if (manual.server2) servers.push({ label: 'سيرفر 2 HD', url: manual.server2 });
-    if (manual.server3) servers.push({ label: 'سيرفر 3 HD', url: manual.server3 });
+    pushIfSports(manual.server1, 'سيرفر 1 HD');
+    pushIfSports(manual.server2, 'سيرفر 2 HD');
+    pushIfSports(manual.server3, 'سيرفر 3 HD');
     // Legacy single-url scraper format
-    if (!servers.length && manual.url)  servers.push({ label: 'سيرفر 1 HD', url: manual.url });
-    if (manual.alternate_url)           servers.push({ label: 'سيرفر 2 HD', url: manual.alternate_url });
+    if (!servers.length) pushIfSports(manual.url, 'سيرفر 1 HD');
+    if (manual.alternate_url) pushIfSports(manual.alternate_url, 'سيرفر 2 HD');
   } else if (typeof manual === 'string' && manual) {
-    servers.push({ label: 'سيرفر 1 HD', url: manual });
+    pushIfSports(manual, 'سيرفر 1 HD');
   }
   // Also check direct match fields
   if (!servers.length) {
     const fb = match.manual_link || match.stream_url || match.stream_link;
-    if (fb) servers.push({ label: 'سيرفر 1 HD', url: fb });
+    pushIfSports(fb, 'سيرفر 1 HD');
   }
 
   if (!servers.length) {
@@ -1294,7 +1321,7 @@ function openTVChannel(streamUrl, channelName, iframeMode) {
 }
 window.openTVChannel = openTVChannel;
 
-console.log("Korra Live SDK V40.0-PRO-LIVE Loaded ✅");
+console.log("Korra Live SDK V41.0-CHAMPIONS-FINAL Loaded ✅");
 
 // ── Global assignments (after all function declarations) ──────
 window.selectMatchDay    = selectMatchDay;
